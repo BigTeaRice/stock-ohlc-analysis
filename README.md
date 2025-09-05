@@ -8,4 +8,19 @@
 - 依賴套件：`pandas`, `plotly`, `yfinance`（安裝方式見下文）
 
 ## 執行步驟
-1. **克隆倉庫**
+# 1. **克隆倉庫**
+
+bash
+
+git clone https://github.com/BigTeaRice/stock-ohlc-analysis.git
+
+cd stock-ohlc-analysis
+
+bash
+
+pip install -r requirements.txt
+
+bash
+
+python stock_analysis.py
+
