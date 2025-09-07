@@ -16,8 +16,6 @@ end_date = datetime.today().strftime("%Y-%m-%d")  # 正確使用 datetime 類
 cache_dir = "data"
 cache_file = os.path.join(cache_dir, f"{ticker}.csv")
 
-# ...（其餘代碼保持不變）
-
 # ------------------------------
 # 步驟 2：數據快取（添加錯誤處理）
 # ------------------------------
@@ -54,6 +52,7 @@ if not all(col in df.columns for col in required_columns):
 # ------------------------------
 fig.write_html("./ohlc_chart.html")  # 輸出到根目錄
 print("圖表已保存到：./ohlc_chart.html")
+
 
 
 
