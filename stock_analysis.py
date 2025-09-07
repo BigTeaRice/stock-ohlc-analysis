@@ -1,11 +1,22 @@
 # ------------------------------
-# 步驟 1：參數設定
+# 導入所需套件（關鍵修正：確保 datetime 正確導入）
 # ------------------------------
-ticker = "0700.HK"       # 確認代碼正確
-start_date = "2000-01-01"  # 縮短起始日期避免下載失敗
-end_date = datetime.today().strftime("%Y-%m-%d")
+import pandas as pd
+import plotly.graph_objects as go
+import yfinance as yf
+from datetime import datetime  # 必須保留此句，且無拼寫錯誤
+import os
+
+# ------------------------------
+# 設定參數（使用 datetime 前已導入）
+# ------------------------------
+ticker = "0700.HK"
+start_date = "2000-01-01"
+end_date = datetime.today().strftime("%Y-%m-%d")  # 正確使用 datetime 類
 cache_dir = "data"
 cache_file = os.path.join(cache_dir, f"{ticker}.csv")
+
+# ...（其餘代碼保持不變）
 
 # ------------------------------
 # 步驟 2：數據快取（添加錯誤處理）
@@ -43,5 +54,6 @@ if not all(col in df.columns for col in required_columns):
 # ------------------------------
 fig.write_html("./ohlc_chart.html")  # 輸出到根目錄
 print("圖表已保存到：./ohlc_chart.html")
+
 
 
