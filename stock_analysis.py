@@ -50,8 +50,13 @@ if not all(col in df.columns for col in required_columns):
 # ------------------------------
 # 步驟 4：繪圖（輸出路徑修正）
 # ------------------------------
+import plotly.graph_objects as go
+
+# Example data and figure creation
+fig = go.Figure(data=...)  # your data here
+
 fig.write_html("./ohlc_chart.html")  # 輸出到根目錄
-print("圖表已保存到：./ohlc_chart.html")
+
 
 
 
