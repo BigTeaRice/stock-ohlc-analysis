@@ -1,38 +1,43 @@
-name: Auto Update Stock Chart
+name: Auto Update Stock OHLC Chart
 
 on:
+  # 自動觸發：每天 UTC 時間 0 點（北京時間 8 點）
   schedule:
-    - cron: '0 0 * * *'  # 每天 UTC 0 點（北京時間 8 點）
-  workflow_dispatch:     # 手動觸發
+    - cron: '0 0 * * *'
+  # 手動觸發：在 GitHub 界面點擊 "Run workflow"
+  workflow_dispatch:
 
 jobs:
-  run-script:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      writes: write
-    steps:
-      - name: 檢出倉庫
-        uses: actions/checkout@v4
+  run-analysis:
+    runs-on: ubuntu-latest  # 使用 Ubuntu 虛擬機
 
-      - name: 設定 Python 環境
+    steps:
+      # 步驟 1：檢出倉庫代碼
+      - name: Checkout repository
+        uses: actions/checkout@v4  # 使用最新版的 checkout 動作
+
+      # 步驟 2：設定 Python 環境
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.10'  # 匹配本地測試的 Python 版本
 
-      - name: 安裝依賴
+      # 步驟 3：安裝依賴套件
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple  # 清華鏡像源
+          python -m pip install --upgrade pip  # 升級 pip
+          pip install -r requirements.txt  # 安裝 requirements.txt 中的套件
 
-      - name: 運行程式碼
+      # 步驟 4：運行主程式碼
+      - name: Run analysis script
         run: python stock_analysis.py
 
-      - name: 提交更新（僅在主分支且成功時）
-        if: github.ref == 'refs/heads/main' && success()
+      # 步驟 5（可選）：自動提交更新（推送到 GitHub）
+      - name: Commit and push updates
+        if: github.ref == 'refs/heads/main'  # 僅在主分支運行時提交
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add .
-          git commit -m "Auto-update: $(date +%Y-%m-%d)"
-          git push
+          git config user.name "GitHub Actions"  # 設定提交者名稱
+          git config user.email "actions@github.com"  # 設定提交者郵箱
+          git add .  # 添加所有修改
+          git commit -m "Auto-update: $(date +%Y-%m-%d)"  # 提交信息（含日期）
+          git push  # 推送到遠程倉庫
