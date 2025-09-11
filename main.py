@@ -10,76 +10,47 @@ import traceback  # 用於記錄完整錯誤堆疊
 import pytz  # 用於時區轉換
 
 # ------------------------------
-# 全域參數設定（修正後）
+# 全域參數設定（確認正確）
 # ------------------------------
-TICKER = "00700.HK"  # 正確港股代碼格式
-START_DATE = "2004-06-16"  # 上市日期後的日期
+TICKER = "00700.HK"  # 標準港股代碼
+START_DATE = "2004-06-16"  # 上市日期
 END_DATE = datetime.today().strftime("%Y-%m-%d")
 CACHE_DIR = "data"
-CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 自動處理代碼中的點
+CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 00700-HK.csv
 HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')
 
 # ------------------------------
-# 函式定義：數據獲取與緩存（移除 headers）
+# 函式定義：數據獲取與緩存（升級後）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
     try:
-        # ...（其他代碼不變）
-        # 修改 yf.download 呼叫，添加請求頭
-        df = yf.download(
-            tickers=ticker,
-            start=start_date,
-            end=end_date,
-            progress=False,
-            auto_adjust=True
-        )
-        # ...（其餘代碼不變）
-        # 創建緩存目錄（若不存在）
         os.makedirs(cache_dir, exist_ok=True)
 
-        # 讀取緩存數據（若存在）
         if os.path.exists(cache_file):
             print(f"讀取緩存數據：{cache_file}")
             df = pd.read_csv(cache_file, parse_dates=["Date"])
-            
-            # 檢查緩存數據是否為空
             if df.empty:
                 raise ValueError("緩存數據為空，請刪除舊緩存文件後重試！")
-            
-            # 驗證時區是否已校正（避免舊緩存未轉換時區）
-            if "Timezone" not in df.columns or df["Timezone"].iloc[0] != tz.zone:
-                print("檢測到舊緩存未轉換時區，重新下載數據...")
-                return download_and_process_data(ticker, start_date, end_date, cache_dir, cache_file, tz)
-            
             return df
 
-        # 下載新數據（若緩存不存在）
         else:
             print(f"下載數據中...（{ticker}，{start_date} 至 {end_date}）")
-            df = yf.download(
+            # 使用 pandas-datareader 替代 yf.download
+            from pandas_datareader import data as pdr
+            df = pdr.get_data_yahoo(
                 tickers=ticker,
                 start=start_date,
                 end=end_date,
-                progress=False,  # 隱藏進度條（適用於自動化環境）
-                auto_adjust=True  # 自動復權（前復權）
+                progress=False,
+                auto_adjust=True
             )
 
-            # 檢查數據是否為空（如股票代碼錯誤或日期範圍無效）
             if df.empty:
                 raise ValueError(f"下載失敗：{ticker} 在 {start_date} 至 {end_date} 無數據！")
 
-            # 時區校正（關鍵步驟）
-            df.index = df.index.tz_localize('UTC').tz_convert(tz)  # UTC → 香港時區
-            df = df.reset_index()  # 將日期索引轉為欄位
-
-            # 保存必要欄位（避免 yfinance 返回多餘欄位）
-            required_columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
-            df = df[required_columns]
-
-            # 新增時區標記欄位（用於後續緩存驗證）
-            df["Timezone"] = tz.zone
-
-            # 保存到 CSV（日期格式轉為字符串，避免時區問題）
+            # 手動轉換時區（繞過 yfinance 時區檢查）
+            df.index = df.index.tz_localize('UTC').tz_convert(tz)
+            df = df.reset_index()
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d %H:%M:%S")
             df.to_csv(cache_file, index=False)
             print(f"數據已保存到緩存：{cache_file}")
@@ -88,8 +59,8 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
     except Exception as e:
         print(f"數據獲取/緩存失敗：{str(e)}")
         with open("error.log", "w") as f:
-            f.write(traceback.format_exc())  # 記錄完整堆棧軌跡
-        raise  # 終止程序以避免錯誤數據繼續處理
+            f.write(traceback.format_exc())
+        raise
 
 # ------------------------------
 # 函式定義：數據預處理
