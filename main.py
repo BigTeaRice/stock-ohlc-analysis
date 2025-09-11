@@ -12,7 +12,7 @@ import pytz  # 用於時區轉換
 # ------------------------------
 # 全域參數設定（修正後）
 # ------------------------------
-TICKER = "00700.HK"  # 修正為香港交易所標準代碼
+TICKER = "00700.HK"  # 正確港股代碼格式
 START_DATE = "2004-06-16"  # 上市日期後的日期
 END_DATE = datetime.today().strftime("%Y-%m-%d")
 CACHE_DIR = "data"
@@ -20,7 +20,7 @@ CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 自�
 HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')
 
 # ------------------------------
-# 函式定義：數據獲取與緩存（新增請求頭）
+# 函式定義：數據獲取與緩存（移除 headers）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
     try:
@@ -31,10 +31,7 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
             start=start_date,
             end=end_date,
             progress=False,
-            auto_adjust=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-            }
+            auto_adjust=True
         )
         # ...（其餘代碼不變）
         # 創建緩存目錄（若不存在）
