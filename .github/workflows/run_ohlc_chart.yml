@@ -1,0 +1,36 @@
+name: Generate OHLC Chart  # 工作流名稱
+
+on: [push]  # 觸發條件：每次推送代碼時運行
+
+jobs:
+  generate-chart:
+    runs-on: ubuntu-latest  # 使用最新版 Ubuntu 虛擬機
+
+    steps:
+      # 步驟 1：檢出倉庫代碼
+      - name: Checkout code
+        uses: actions/checkout@v4  # 官方檢出動作
+
+      # 步驟 2：設置 Python 環境
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # 選擇支持的 Python 版本
+
+      # 步驟 3：安裝依賴庫
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # 根據 requirements.txt 安裝庫
+
+      # 步驟 4：運行腳本生成圖表
+      - name: Run script to generate OHLC chart
+        run: python generate_ohlc_chart.py
+
+      # 步驟 5（可選）：上傳生成的圖表作為產物
+      - name: Upload chart as artifact
+        if: success()  # 僅當腳本成功運行時上傳
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohlc-chart  # 產物名稱
+          path: ohlc_chart.html  # 圖表路徑（與腳本輸出路徑一致）
