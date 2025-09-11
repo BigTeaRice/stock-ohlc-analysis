@@ -20,7 +20,7 @@ CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 00700
 HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')
 
 # ------------------------------
-# 函式定義：數據獲取與緩存（升級後）
+# 函式定義：數據獲取與緩存（使用 pandas-datareader）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
     try:
@@ -35,22 +35,31 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
 
         else:
             print(f"下載數據中...（{ticker}，{start_date} 至 {end_date}）")
-            # 使用 pandas-datareader 替代 yf.download
+            # 使用 pandas-datareader 獲取 Yahoo Finance 數據
             from pandas_datareader import data as pdr
             df = pdr.get_data_yahoo(
                 tickers=ticker,
                 start=start_date,
                 end=end_date,
-                progress=False,
-                auto_adjust=True
+                progress=False,  # 隱藏進度條
+                auto_adjust=True  # 自動復權
             )
 
             if df.empty:
                 raise ValueError(f"下載失敗：{ticker} 在 {start_date} 至 {end_date} 無數據！")
 
-            # 手動轉換時區（繞過 yfinance 時區檢查）
-            df.index = df.index.tz_localize('UTC').tz_convert(tz)
-            df = df.reset_index()
+            # 時區校正（關鍵步驟）
+            df.index = df.index.tz_localize('UTC').tz_convert(tz)  # UTC → 香港時區
+            df = df.reset_index()  # 將日期索引轉為欄位
+
+            # 保存必要欄位（避免多餘數據）
+            required_columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
+            df = df[required_columns]
+
+            # 新增時區標記欄位（用於緩存驗證）
+            df["Timezone"] = tz.zone
+
+            # 保存到 CSV（日期格式轉為字符串）
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d %H:%M:%S")
             df.to_csv(cache_file, index=False)
             print(f"數據已保存到緩存：{cache_file}")
