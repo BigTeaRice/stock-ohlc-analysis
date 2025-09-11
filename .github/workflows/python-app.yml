@@ -36,4 +36,37 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest
+        pytestname: Generate OHLC Chart  # 工作流名稱
+
+on:  # 觸發條件（此處設定 push 到 main 分支時觸發）
+  push:
+    branches: [ "main" ]
+
+jobs:  # 定義任務
+  generate-chart:
+    runs-on: ubuntu-latest  # 使用 Ubuntu 虛擬機器
+
+    steps:  # 執行步驟
+      - name: Checkout code  # 拉取倉庫代碼
+        uses: actions/checkout@v4
+
+      - name: Set up Python  # 安裝 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # 選擇 Python 版本
+
+      - name: Install dependencies  # 安裝依賴
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run script  # 執行主程式
+        run: |
+          python main.py  # 假設主程式檔名為 main.py
+
+      - name: Upload chart artifact  # 上傳生成的圖表（可選）
+        if: success()  # 僅當任務成功時上傳
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohlc-chart
+          path: ./ohlc_chart.html  # 圖表輸出路徑
