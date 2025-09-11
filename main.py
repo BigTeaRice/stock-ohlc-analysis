@@ -10,24 +10,33 @@ import traceback  # 用於記錄完整錯誤堆疊
 import pytz  # 用於時區轉換
 
 # ------------------------------
-# 全域參數設定（可根據需求調整）
+# 全域參數設定（修正後）
 # ------------------------------
-TICKER = "0700.HK"  # 股票代碼（港股需帶.HK）
-START_DATE = "2000-01-01"  # 數據起始日期
-END_DATE = datetime.today().strftime("%Y-%m-%d")  # 自動獲取今日日期
-CACHE_DIR = "data"  # 緩存目錄名稱
-CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 緩存文件路徑（避免特殊符號）
-HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')  # 香港時區
+TICKER = "00700.HK"  # 修正為香港交易所標準代碼
+START_DATE = "2004-06-16"  # 上市日期後的日期
+END_DATE = datetime.today().strftime("%Y-%m-%d")
+CACHE_DIR = "data"
+CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")  # 自動處理代碼中的點
+HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')
 
 # ------------------------------
-# 函式定義：數據獲取與緩存
+# 函式定義：數據獲取與緩存（新增請求頭）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
-    """
-    下載或讀取緩存的股票數據，並進行時區校正。
-    返回處理後的 DataFrame。
-    """
     try:
+        # ...（其他代碼不變）
+        # 修改 yf.download 呼叫，添加請求頭
+        df = yf.download(
+            tickers=ticker,
+            start=start_date,
+            end=end_date,
+            progress=False,
+            auto_adjust=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            }
+        )
+        # ...（其餘代碼不變）
         # 創建緩存目錄（若不存在）
         os.makedirs(cache_dir, exist_ok=True)
 
