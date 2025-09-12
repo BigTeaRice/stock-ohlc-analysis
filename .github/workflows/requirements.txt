@@ -1,0 +1,4 @@
+pandas==2.1.4
+plotly==5.18.0
+yfinance==0.2.31
+python-dotenv==1.0.0  # 可選（若需環境變量）
