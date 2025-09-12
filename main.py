@@ -86,9 +86,12 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
 
     except Exception as e:
         print(f"數據獲取/緩存異常：{str(e)}")
-        with open("error.log", "w", encoding='utf-8') as f:
-            f.write(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-")
+        # 原錯誤代碼（第90行附近）
+     with open("error.log", "w", encoding='utf-8') as f:
+         f.write(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+         # 修正：添加閉合引號，並確保字符串完整
+         f.write(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+     ")  # 正確閉合引號
             f.write(traceback.format_exc())
         raise
 
