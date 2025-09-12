@@ -12,7 +12,7 @@ import pytz  # 用於時區轉換
 # ------------------------------
 # 全域參數設定（確認正確）
 # ------------------------------
-TICKER = "00700.HK"  # 標準港股代碼
+TICKER = "0700.HK"  # 正確港股代碼（去掉前導零）
 START_DATE = "2004-06-16"  # 上市日期
 END_DATE = datetime.today().strftime("%Y-%m-%d")
 CACHE_DIR = "data"
@@ -28,15 +28,16 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
 
         if os.path.exists(cache_file):
             print(f"讀取緩存數據：{cache_file}")
-            df = pd.read_csv(cache_file, parse_dates=["Date"])
+            df = pd.read_csv(cache_file, parse_dates=["Date"])  # 直接解析日期列為 datetime
             if df.empty:
                 raise ValueError("緩存數據為空，請刪除舊緩存文件後重試！")
+            
+            # 從緩存加載時重新應用時區（因 CSV 不存時區，需手動設定）
+            df.index = pd.to_datetime(df["Date"]).tz_localize('UTC').tz_convert(tz)
             return df
 
         else:
             print(f"下載數據中...（{ticker}，{start_date} 至 {end_date}）")
-            # 直接使用 yfinance 下載（无需 pandas-datareader）
-            import yfinance as yf
             df = yf.download(
                 tickers=ticker,
                 start=start_date,
@@ -48,10 +49,11 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
             if df.empty:
                 raise ValueError(f"下載失敗：{ticker} 在 {start_date} 至 {end_date} 無數據！")
 
-            # 時區校正
-            df.index = df.index.tz_localize('UTC').tz_convert(tz)
-            df = df.reset_index()
-            df["Date"] = df["Date"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            # 時區校正（保留 UTC 時間，後續轉換為香港時間）
+            df.index = df.index.tz_localize('UTC')  # 先標記為 UTC 時區
+            df = df.reset_index()  # 將索引轉為日期列
+            
+            # 保存緩存時保留原始 UTC 時間（不轉為字符串，避免時區丟失）
             df.to_csv(cache_file, index=False)
             print(f"數據已保存到緩存：{cache_file}")
             return df
