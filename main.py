@@ -78,7 +78,6 @@ def fetch_and_cache_data():
                     time.sleep(RETRY_DELAY)
                 else:
                     print("達到最大重試次數，使用備用數據源")
-                    # 嘗試從緩存載入舊數據（如果存在）
                     if os.path.exists(CACHE_FILE):
                         print("載入歷史緩存數據")
                         return pd.read_csv(CACHE_FILE, parse_dates=['Date'])
@@ -109,10 +108,6 @@ def preprocess_data(df):
     # 按日期排序
     df.sort_values('Date', inplace=True)
     
-    # 添加年月標記用於縮放
-    df['Year'] = df['Date'].dt.year
-    df['Month'] = df['Date'].dt.month_name()
-    
     return df
 
 # ------------------------------
@@ -133,18 +128,6 @@ def plot_ohlc_chart(df):
             decreasing_line_color='green', # 港股下跌為綠色
         )])
         
-        # 計算移動平均線
-        for period in [20, 50, 200]:
-            if len(df) > period:
-                ma = df['Close'].rolling(window=period).mean()
-                fig.add_trace(go.Scatter(
-                    x=df['Date'],
-                    y=ma,
-                    name=f'{period}日均線',
-                    line=dict(width=1.5),
-                    visible='legendonly'  # 預設隱藏
-                ))
-        
         # 設置圖表佈局
         fig.update_layout(
             title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {END_DATE})',
@@ -155,60 +138,6 @@ def plot_ohlc_chart(df):
             template='plotly_white',
             hovermode='x unified',
             height=800,
-            # 添加範圍選擇器
-            xaxis=dict(
-                rangeselector=dict(
-                    buttons=list([
-                        dict(count=1, label="1個月", step="month", stepmode="backward"),
-                        dict(count=6, label="6個月", step="month", stepmode="backward"),
-                        dict(count=1, label="今年", step="year", stepmode="todate"),
-                        dict(count=1, label="1年", step="year", stepmode="backward"),
-                       "),
-                        dict(step="all", label="全部數據")
-                    ]),
-                    bgcolor='lightblue',
-                    font=dict(color='darkblue')
-                ),
-                rangeslider=dict(visible=True, thickness=0.05),
-                type="date"
-            ),
-            # 添加成交量圖
-            yaxis2=dict(
-                title="成交量",
-                overlaying="y",
-                side="right",
-                showgrid=False
-            ),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
-        )
-        
-        # 添加成交量柱狀圖
-        fig.add_trace(go.Bar(
-            x=df['Date'],
-            y=df['Volume'],
-            name='成交量',
-            marker_color='rgba(100, 100, 100, 0.5)',
-            yaxis="y2"
-        ))
-        
-        # 添加最新價格標記
-        last_close = df.iloc[-1]['Close']
-        fig.add_annotation(
-            x=df.iloc[-1]['Date'],
-            y=last_close,
-            text=f'最新: {last_close:.2f}',
-            showarrow=True,
-            arrowhead=1,
-            ax=-40,
-            ay=-30,
-            bgcolor="white",
-            bordercolor="black"
         )
         
         # 保存並顯示圖表
