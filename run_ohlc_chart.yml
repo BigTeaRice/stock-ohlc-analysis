@@ -27,7 +27,7 @@ jobs:
           python main.py
 
       - name: Upload HTML chart
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ohlc_chart
           path: stock_data/*_candlestick.html  # 確保這裡的路徑正確
