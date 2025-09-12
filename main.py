@@ -141,7 +141,7 @@ def plot_ohlc_chart(df):
         )
         
         # 保存並顯示圖表
-        html_file = f"{TICKER.replace('.', '_')}_candlestick.html"
+        html_file = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '_')}_candlestick.html")
         fig.write_html(html_file, auto_open=True)
         print(f"圖表已保存為: {html_file}")
         
