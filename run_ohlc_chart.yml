@@ -1,33 +1,47 @@
-name: Run Python Script
+name: Stock Data Analysis Pipeline  # 工作流程名稱（可自訂）
 
+# 觸發條件：當代碼推送到 main 分支時執行
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
+# 定義作業（Job）：在 Ubuntu 環境中運行
 jobs:
-  run:
-    runs-on: ubuntu-latest
+  analyze-and-upload:
+    runs-on: ubuntu-latest  # 使用最新版 Ubuntu 系統
 
+    # 作業步驟（Steps）
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      # 步驟1：檢出倉庫代碼（必須，否則無法訪問本地文件）
+      - name: Checkout repository code
+        uses: actions/checkout@v4  # 最新版檢出動作（替代舊版 v3）
         with:
-          python-version: '3.x'
+          fetch-depth: 0  # 檢出完整歷史（可選，默認 1）
 
-      - name: Install dependencies
-        run: |
-          pip install pandas plotly yfinance pytz
-
-      - name: Run script
-        run: |
-          python main.py
-
-      - name: Upload HTML chart
-        uses: actions/upload-artifact@v3
+      # 步驟2：安裝依賴（若需要運行 Python 代碼）
+      - name: Set up Python environment
+        uses: actions/setup-python@v5  # 最新版 Python 環境設定動作
         with:
-          name: ohlc_chart
-          path: stock_data/*_candlestick.html  # 確保這裡的路徑正確
+          python-version: "3.11"  # 指定 Python 版本（可換為 3.10/3.9 等）
+
+      # 步驟3：安裝項目依賴（例如 pandas, yfinance 等）
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # 假設項目有 requirements.txt
+
+      # 步驟4：運行主程式生成數據（示例：生成測試數據或執行分析）
+      - name: Run main analysis script
+        run: |
+          python main.py  # 執行你的主程式（會生成數據或圖表）
+
+      # 步驟5：上傳生成的工件（例如圖表、數據文件）
+      - name: Upload analysis results as artifact
+        uses: actions/upload-artifact@v4  # 最新版上傳工件動作（關鍵修正：v4 替代 v3）
+        with:
+          name: stock-analysis-results  # 工件名稱（可自訂，顯示在 GitHub 界面）
+          path: |  # 指定要上傳的文件/目錄（支持通配符）
+            ohlc_chart.html  # 生成的 HTML 圖表
+            data/*.csv       # 緩存的數據文件（所有 .csv 文件）
+          retention-days: 7  # 工件保留天數（7 天後自動刪除，可調整為 1-90）
+          if-no-files-found: error  # 若無文件上傳則報錯（可選：ignore 為靜默失敗）
