@@ -26,9 +26,6 @@ RETRY_DELAY = 5  # 重試間隔（秒）
 # 函式定義：數據獲取與緩存（含重試機制）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
-    """
-    下載並緩存股票數據，自動重試下載，處理時區和緩存有效性。
-    """
     try:
         os.makedirs(cache_dir, exist_ok=True)  # 創建緩存目錄（若不存在）
 
@@ -84,10 +81,10 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
                 else:
                     raise RuntimeError(f"數據下載失敗（超過 {MAX_RETRIES} 次嘗試）") from e
 
-    except Exception as e:
-        print(f"數據獲取/緩存異常：{str(e)}")
-        # 原錯誤代碼（第90行附近）
-     with open("error.log", "w", encoding='utf-8') as f:
+    except Exception as e:  # 外層 except 塊縮進 4 空格
+        print(f"數據獲取/緩存異常：{str(e)}")  # 縮進 8 空格（與 except 塊一致）
+        # 修正：with open 行縮進與 except 塊一致（4 空格）
+        with open("error.log", "w", encoding='utf-8') as f:
          f.write(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
          # 修正：添加閉合引號，並確保字符串完整
          f.write(f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
