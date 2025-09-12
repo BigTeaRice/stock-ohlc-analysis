@@ -1,26 +1,26 @@
+name: Run Python Script
+
+on:
+  push:
+    branches:
+      - main
+
 jobs:
-  generate-chart:
+  run:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # 拉取倉庫代碼
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/checkout@v2
+      
+      - name: Set up Python
+        uses: actions/setup-python@v2
         with:
-          python-version: "3.11"  # 指定 Python 版本
-
-      # 新增：安裝 pandas-datareader（關鍵步驟）
-      - name: Install pandas-datareader
-        run: |
-          pip install pandas-datareader==0.10.0  # 安裝穩定版
-
-      # 安裝其他依賴（如 pandas、plotly 等）
+          python-version: '3.x'  # 使用你需要的 Python 版本
+      
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt  # 若有 requirements.txt
-
-      - name: Run main.py
+          pip install -r requirements.txt  # 如果有依賴，請確保有 requirements.txt 文件
+      
+      - name: Run script
         run: |
-          python main.py  # 執行主程式
+             python main.py  # 執行主程式
