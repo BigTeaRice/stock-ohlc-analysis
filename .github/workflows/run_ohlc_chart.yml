@@ -1,0 +1,33 @@
+name: Run Python Script
+
+on:
+  push:
+    branches:
+      - main  # 當推送到 main 分支時觸發
+
+jobs:
+  run:
+    runs-on: ubuntu-latest  # 使用最新的 Ubuntu 環境
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2  # 下載代碼
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'  # 使用最新的 Python 版本
+
+      - name: Install dependencies
+        run: |
+          pip install pandas plotly yfinance pytz  # 安裝所需庫
+
+      - name: Run script
+        run: |
+          python main.py  # 執行主程式
+
+      - name: Upload HTML chart
+        uses: actions/upload-artifact@v2
+        with:
+          name: ohlc_chart
+          path: stock_data/*.html  # 根據實際路徑更新
