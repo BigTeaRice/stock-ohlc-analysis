@@ -4,21 +4,20 @@
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import traceback
-import pytz
 import time
+import sys
 
 # ------------------------------
 # 全域參數設定
 # ------------------------------
 TICKER = "0700.HK"  # 騰訊港股代碼
 START_DATE = "2004-06-16"  # 騰訊上市日期
-END_DATE = datetime.today().strftime("%Y-%m-%d")  # 當前日期
 CACHE_DIR = "stock_data"  # 緩存目錄
-CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '_')}.csv")  # 緩存文件路徑
-HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')  # 香港時區
+CACHE_FILE = os.path.join(CACHE_DIR, "0700_HK.csv")  # 緩存文件路徑
+HTML_FILE = os.path.join(CACHE_DIR, "0700_HK_candlestick.html")  # HTML文件路徑
 MAX_RETRIES = 5  # 最大重試次數
 RETRY_DELAY = 3  # 重試間隔(秒)
 
@@ -28,32 +27,35 @@ RETRY_DELAY = 3  # 重試間隔(秒)
 def fetch_and_cache_data():
     """下載股票數據並緩存到本地文件"""
     try:
+        # 獲取當前日期（確保是工作日）
+        end_date = datetime.now()
+        # 如果是周末，使用上一個工作日
+        if end_date.weekday() >= 5:  # 5=周六, 6=周日
+            end_date = end_date - timedelta(days=end_date.weekday() - 4)
+        END_DATE = end_date.strftime("%Y-%m-%d")
+        
+        print(f"下載 {TICKER} 數據 ({START_DATE} 至 {END_DATE})...")
+        
         # 創建緩存目錄
         os.makedirs(CACHE_DIR, exist_ok=True)
         
-        # 嘗試讀取緩存
-        if os.path.exists(CACHE_FILE):
-            cache_date = datetime.fromtimestamp(os.path.getmtime(CACHE_FILE))
-            today = datetime.now()
-            if cache_date.date() == today.date():
-                print("使用今日最新緩存數據")
-                return pd.read_csv(CACHE_FILE, parse_dates=['Date'])
-        
         # 從Yahoo Finance下載數據
-        print(f"下載 {TICKER} 數據 ({START_DATE} 至 {END_DATE})...")
         for attempt in range(MAX_RETRIES):
             try:
                 df = yf.download(
                     TICKER, 
                     start=START_DATE, 
                     end=END_DATE,
-                    progress=False,
-                    auto_adjust=True
+                    progress=True,
+                    auto_adjust=True,
+                    threads=True
                 )
                 
                 # 檢查數據是否有效
-                if df.empty:
-                    raise ValueError("下載數據為空")
+                if df.empty or len(df) < 10:
+                    print(f"數據量不足或為空，嘗試 {attempt+1}/{MAX_RETRIES}")
+                    time.sleep(RETRY_DELAY)
+                    continue
                 
                 # 重置索引並重命名列
                 df = df.reset_index()
@@ -67,8 +69,8 @@ def fetch_and_cache_data():
                 }, inplace=True)
                 
                 # 保存到緩存
-                df.to_csv(CACHE_FILE, index=False)
-                print(f"數據已保存到 {CACHE_FILE}")
+                df.to_csv(CACHE_FILE, index=False, encoding='utf-8')
+                print(f"數據已保存到 {CACHE_FILE}，共 {len(df)} 條記錄")
                 return df
                 
             except Exception as e:
@@ -77,18 +79,21 @@ def fetch_and_cache_data():
                     print(f"{RETRY_DELAY}秒後重試...")
                     time.sleep(RETRY_DELAY)
                 else:
-                    print("達到最大重試次數，使用備用數據源")
-                    if os.path.exists(CACHE_FILE):
-                        print("載入歷史緩存數據")
-                        return pd.read_csv(CACHE_FILE, parse_dates=['Date'])
-                    else:
-                        raise RuntimeError("無法獲取股票數據")
+                    raise RuntimeError(f"達到最大重試次數: {str(e)}")
     
     except Exception as e:
         error_msg = f"{datetime.now()}: 數據獲取失敗 - {str(e)}\n{traceback.format_exc()}"
-        with open("stock_error.log", "a") as f:
-            f.write(error_msg + "\n\n")
-        raise
+        print(error_msg)
+        # 嘗試加載歷史緩存數據
+        if os.path.exists(CACHE_FILE):
+            print("嘗試載入歷史緩存數據...")
+            try:
+                df = pd.read_csv(CACHE_FILE, parse_dates=['Date'])
+                print(f"成功載入歷史緩存數據，共 {len(df)} 條記錄")
+                return df
+            except Exception as cache_error:
+                print(f"載入緩存數據失敗: {str(cache_error)}")
+        raise RuntimeError("無法獲取股票數據")
 
 # ------------------------------
 # 函式：數據預處理
@@ -99,15 +104,20 @@ def preprocess_data(df):
     if not pd.api.types.is_datetime64_any_dtype(df['Date']):
         df['Date'] = pd.to_datetime(df['Date'])
     
-    # 轉換為香港時區
-    df['Date'] = df['Date'].dt.tz_localize('UTC').dt.tz_convert(HONG_KONG_TZ)
-    
     # 處理缺失值
-    df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
+    initial_count = len(df)
+    df.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'], inplace=True)
+    if len(df) < initial_count:
+        print(f"移除 {initial_count - len(df)} 條包含缺失值的記錄")
     
     # 按日期排序
     df.sort_values('Date', inplace=True)
     
+    # 檢查數據有效性
+    if df['Close'].isnull().any() or df['Volume'].isnull().any():
+        print("警告：數據中仍然存在空值")
+    
+    print(f"數據預處理完成，剩餘 {len(df)} 條有效記錄")
     return df
 
 # ------------------------------
@@ -128,9 +138,18 @@ def plot_ohlc_chart(df):
             decreasing_line_color='green', # 港股下跌為綠色
         )])
         
+        # 添加成交量圖
+        fig.add_trace(go.Bar(
+            x=df['Date'],
+            y=df['Volume'],
+            name="成交量",
+            marker_color='rgba(100, 100, 100, 0.3)',
+            yaxis="y2"
+        ))
+        
         # 設置圖表佈局
         fig.update_layout(
-            title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {END_DATE})',
+            title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {df["Date"].max().strftime("%Y-%m-%d")})',
             title_x=0.5,
             title_font=dict(size=24, color='darkblue'),
             xaxis_title='日期',
@@ -138,29 +157,57 @@ def plot_ohlc_chart(df):
             template='plotly_white',
             hovermode='x unified',
             height=800,
+            showlegend=True,
+            # 添加右側y軸用於成交量
+            yaxis2=dict(
+                title="成交量",
+                overlaying="y",
+                side="right",
+                showgrid=False
+            ),
+            xaxis_rangeslider_visible=False  # 隱藏範圍滑塊，因為我們有成交量
         )
         
-        # 保存並顯示圖表
-        html_file = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '_')}_candlestick.html")
-        fig.write_html(html_file, auto_open=True)
-        print(f"圖表已保存為: {html_file}")
+        # 更新x軸設置
+        fig.update_xaxes(
+            rangeslider_visible=False,
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1月", step="month", stepmode="backward"),
+                    dict(count=6, label="6月", step="month", stepmode="backward"),
+                    dict(count=1, label="1年", step="year", stepmode="backward"),
+                    dict(count=5, label="5年", step="year", stepmode="backward"),
+                    dict(step="all")
+                ])
+            )
+        )
         
-        return html_file
+        # 保存HTML文件
+        fig.write_html(
+            HTML_FILE, 
+            auto_open=False,
+            include_plotlyjs='cdn',  # 使用CDN以減小文件大小
+            full_html=True
+        )
+        
+        print(f"圖表已保存為: {HTML_FILE}")
+        print(f"文件大小: {os.path.getsize(HTML_FILE) / 1024 / 1024:.2f} MB")
+        
+        return HTML_FILE
         
     except Exception as e:
         error_msg = f"{datetime.now()}: 繪圖失敗 - {str(e)}\n{traceback.format_exc()}"
-        with open("plot_error.log", "a") as f:
-            f.write(error_msg + "\n\n")
+        print(error_msg)
         raise
 
 # ------------------------------
 # 主程序
 # ------------------------------
 if __name__ == "__main__":
-    print("=" * 50)
+    print("=" * 60)
     print(f"騰訊控股(0700.HK)歷史K線圖生成器")
-    print(f"日期範圍: {START_DATE} 至 {END_DATE}")
-    print("=" * 50)
+    print(f"開始時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
     
     try:
         # 獲取數據
@@ -168,16 +215,20 @@ if __name__ == "__main__":
         
         # 預處理數據
         df = preprocess_data(df)
-        print(f"數據預處理完成，共 {len(df)} 條記錄")
         
         # 繪製圖表
         print("生成互動式K線圖...")
         chart_file = plot_ohlc_chart(df)
         
-        print("=" * 50)
+        # 輸出成功信息
+        print("=" * 60)
         print("程式執行成功！")
-        print(f"圖表已保存為: {os.path.abspath(chart_file)}")
+        print(f"最終數據記錄數: {len(df)}")
+        print(f"數據時間範圍: {df['Date'].min().strftime('%Y-%m-%d')} 至 {df['Date'].max().strftime('%Y-%m-%d')}")
+        print(f"圖表文件: {os.path.abspath(chart_file)}")
+        print("=" * 60)
         
     except Exception as e:
         print(f"程式執行失敗: {str(e)}")
-        print("請查看錯誤日誌獲取詳細信息")
+        print(traceback.format_exc())
+        sys.exit(1)  # 返回錯誤代碼
