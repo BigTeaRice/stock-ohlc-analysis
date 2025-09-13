@@ -31,7 +31,8 @@ def fetch_and_cache_data():
         end_date = datetime.now()
         # 如果是周末，使用上一個工作日
         if end_date.weekday() >= 5:  # 5=周六, 6=周日
-            end_date = end_date - timedelta(days=end_date.weekday() - 4)
+            days_to_subtract = end_date.weekday() - 4
+            end_date = end_date - timedelta(days=days_to_subtract)
         END_DATE = end_date.strftime("%Y-%m-%d")
         
         print(f"下載 {TICKER} 數據 ({START_DATE} 至 {END_DATE})...")
@@ -147,11 +148,14 @@ def plot_ohlc_chart(df):
             yaxis="y2"
         ))
         
+        # 獲取最新日期
+        latest_date = df['Date'].max().strftime("%Y-%m-%d")
+        
         # 設置圖表佈局
         fig.update_layout(
-            title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {df["Date"].max().strftime("%Y-%m-%d")})',
+            title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {latest_date})',
             title_x=0.5,
-            title_font=dict(size=24, color='darkblue'),
+            title_font=dict(size=20, color='darkblue'),
             xaxis_title='日期',
             yaxis_title='股價 (HKD)',
             template='plotly_white',
@@ -165,7 +169,7 @@ def plot_ohlc_chart(df):
                 side="right",
                 showgrid=False
             ),
-            xaxis_rangeslider_visible=False  # 隱藏範圍滑塊，因為我們有成交量
+            xaxis_rangeslider_visible=False
         )
         
         # 更新x軸設置
@@ -177,7 +181,7 @@ def plot_ohlc_chart(df):
                     dict(count=6, label="6月", step="month", stepmode="backward"),
                     dict(count=1, label="1年", step="year", stepmode="backward"),
                     dict(count=5, label="5年", step="year", stepmode="backward"),
-                    dict(step="all")
+                    dict(step="all", label="全部")
                 ])
             )
         )
@@ -186,7 +190,7 @@ def plot_ohlc_chart(df):
         fig.write_html(
             HTML_FILE, 
             auto_open=False,
-            include_plotlyjs='cdn',  # 使用CDN以減小文件大小
+            include_plotlyjs='cdn',
             full_html=True
         )
         
@@ -231,4 +235,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"程式執行失敗: {str(e)}")
         print(traceback.format_exc())
-        sys.exit(1)  # 返回錯誤代碼
+        sys.exit(1)
