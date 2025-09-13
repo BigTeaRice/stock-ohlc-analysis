@@ -1,33 +1,86 @@
-name: Run Python Script
+name: Generate Tencent OHLC Chart
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 18 * * 1-5'  # 每個工作日 UTC 時間 18:00 運行 (香港時間凌晨2點)
+  workflow_dispatch:  # 允許手動觸發
 
 jobs:
-  run:
+  generate-chart:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 設置超時時間
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.10'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install pandas plotly yfinance pytz
+          python -m pip install --upgrade pip
+          pip install pandas plotly yfinance
 
-      - name: Run script
+      - name: Create data directory
+        run: mkdir -p stock_data
+
+      - name: Run Python script to generate chart
+        run: python main.py
+
+      - name: List generated files
         run: |
-          python main.py
+          echo "Generated files in stock_data/:"
+          ls -la stock_data/
+          echo -e "\nFile sizes:"
+          du -h stock_data/*
 
-      - name: Upload artifact
+      - name: Verify HTML file
+        run: |
+          if [ -f "stock_data/0700_HK_candlestick.html" ]; then
+            echo "✅ HTML file generated successfully"
+            echo "File size: $(du -h stock_data/0700_HK_candlestick.html | cut -f1)"
+          else
+            echo "❌ HTML file not found!"
+            exit 1
+          fi
+
+      - name: Upload HTML chart as artifact
         uses: actions/upload-artifact@v3
         with:
-          name: ohlc_chart
-          path: stock_data/*_candlestick.html  # 確保這裡的路徑正確
+          name: tencent-ohlc-chart
+          path: stock_data/0700_HK_candlestick.html
+          retention-days: 7
+
+      - name: Upload CSV data as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tencent-stock-data
+          path: stock_data/0700_HK.csv
+          retention-days: 7
+
+      - name: Upload all generated files
+        uses: actions/upload-artifact@v3
+        with:
+          name: all-generated-files
+          path: stock_data/
+          retention-days: 3
+
+      - name: Success notification
+        if: success()
+        run: |
+          echo "✅ Chart generation completed successfully!"
+          echo "📊 Artifacts have been uploaded and can be downloaded from the Actions page"
+
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ Chart generation failed!"
+          echo "Please check the logs for details"
