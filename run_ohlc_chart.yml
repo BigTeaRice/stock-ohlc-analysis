@@ -12,7 +12,7 @@ on:
 jobs:
   generate-chart:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # 設置超時時間
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -40,47 +40,70 @@ jobs:
           echo "Generated files in stock_data/:"
           ls -la stock_data/
           echo -e "\nFile sizes:"
-          du -h stock_data/*
+          du -h stock_data/* || true
 
-      - name: Verify HTML file
+      - name: Verify HTML file exists
+        id: verify-html
         run: |
           if [ -f "stock_data/0700_HK_candlestick.html" ]; then
+            echo "HTML_FILE_EXISTS=true" >> $GITHUB_OUTPUT
             echo "✅ HTML file generated successfully"
-            echo "File size: $(du -h stock_data/0700_HK_candlestick.html | cut -f1)"
           else
+            echo "HTML_FILE_EXISTS=false" >> $GITHUB_OUTPUT
             echo "❌ HTML file not found!"
-            exit 1
           fi
 
-      - name: Upload HTML chart as artifact
+      - name: Verify CSV file exists
+        id: verify-csv
+        run: |
+          if [ -f "stock_data/0700_HK.csv" ]; then
+            echo "CSV_FILE_EXISTS=true" >> $GITHUB_OUTPUT
+            echo "✅ CSV file generated successfully"
+          else
+            echo "CSV_FILE_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "❌ CSV file not found!"
+          fi
+
+      - name: Upload HTML chart artifact
+        if: steps.verify-html.outputs.HTML_FILE_EXISTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tencent-ohlc-chart
           path: stock_data/0700_HK_candlestick.html
           retention-days: 7
 
-      - name: Upload CSV data as artifact
+      - name: Upload CSV data artifact
+        if: steps.verify-csv.outputs.CSV_FILE_EXISTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tencent-stock-data
           path: stock_data/0700_HK.csv
           retention-days: 7
 
-      - name: Upload all generated files
+      - name: Upload all artifacts as zip
+        if: steps.verify-html.outputs.HTML_FILE_EXISTS == 'true' || steps.verify-csv.outputs.CSV_FILE_EXISTS == 'true'
+        run: |
+          cd stock_data
+          zip -r ../generated_files.zip .
+          cd ..
+          echo "ZIP_FILE=generated_files.zip" >> $GITHUB_ENV
+
+      - name: Upload zip artifact
+        if: env.ZIP_FILE != ''
         uses: actions/upload-artifact@v4
         with:
           name: all-generated-files
-          path: stock_data/
+          path: ${{ env.ZIP_FILE }}
           retention-days: 3
 
       - name: Success notification
         if: success()
         run: |
           echo "✅ Chart generation completed successfully!"
-          echo "📊 Artifacts have been uploaded and can be downloaded from the Actions page"
+          echo "Artifacts available for download from Actions page"
 
       - name: Failure notification
         if: failure()
         run: |
           echo "❌ Chart generation failed!"
-          echo "Please check the logs for details"
+          echo "Check logs for details"
