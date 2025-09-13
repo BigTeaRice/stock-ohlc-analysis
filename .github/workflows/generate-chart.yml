@@ -1,81 +1,203 @@
-name: Generate Tencent OHLC Chart
+name: Generate Tencent Stock Chart
 
 on:
+  # 手動觸發
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: 'Enable debug mode'
+        required: false
+        default: false
+        type: boolean
+  
+  # 自動調度 - 每個工作日香港時間晚上10點運行 (UTC+8)
+  schedule:
+    - cron: '0 14 * * 1-5'  # UTC時間14:00 = 香港時間22:00
+  
+  # 推送到main分支時觸發
   push:
     branches: [ main ]
-  workflow_dispatch:  # 允許手動觸發
+  
+  # 創建Pull Request時觸發
+  pull_request:
+    branches: [ main ]
+
+# 設置環境變量
+env:
+  PYTHON_VERSION: '3.10'
+  TICKER: '0700.HK'
+  CACHE_DIR: 'stock_data'
 
 jobs:
   generate-chart:
+    name: Generate OHLC Chart
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
+    
     steps:
+      # 第一步：檢出代碼
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Set up Python
+      # 第二步：設置Python環境
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
+      # 第三步：安裝依賴
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas plotly yfinance
+          echo "Dependencies installed successfully"
 
+      # 第四步：創建數據目錄
       - name: Create data directory
-        run: mkdir -p stock_data
-
-      - name: Run Python script
-        run: python main.py
-        continue-on-error: true  # 即使脚本失败也继续执行后续步骤
-
-      - name: List generated files
         run: |
-          echo "Generated files:"
-          ls -la stock_data/ 2>/dev/null || echo "No stock_data directory"
-          echo -e "\nCurrent directory:"
-          ls -la
+          mkdir -p ${{ env.CACHE_DIR }}
+          echo "Directory created: ${{ env.CACHE_DIR }}"
 
-      - name: Upload artifacts if they exist
+      # 第五步：運行Python腳本
+      - name: Run chart generation script
+        id: generate
         run: |
-          # 检查并上传HTML文件
-          if [ -f "stock_data/0700_HK_candlestick.html" ]; then
-            echo "Uploading HTML file..."
-            mkdir -p upload
-            cp stock_data/0700_HK_candlestick.html upload/
-          fi
-          
-          # 检查并上传CSV文件
-          if [ -f "stock_data/0700_HK.csv" ]; then
-            echo "Uploading CSV file..."
-            mkdir -p upload
-            cp stock_data/0700_HK.csv upload/
-          fi
-          
-          # 如果有文件就上传
-          if [ -d "upload" ] && [ "$(ls -A upload)" ]; then
-            echo "Files ready for upload"
+          echo "Starting chart generation for ${{ env.TICKER }}..."
+          python main.py
+          exit_code=$?
+          echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
+          if [ $exit_code -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "No files to upload"
-            mkdir -p upload
-            echo "No data available" > upload/README.txt
+            echo "status=failure" >> $GITHUB_OUTPUT
           fi
+        continue-on-error: true  # 即使腳本失敗也繼續執行後續步驟
 
-      - name: Upload artifacts
+      # 第六步：檢查生成的文件
+      - name: Verify generated files
+        id: verify
+        run: |
+          echo "Checking generated files in ${{ env.CACHE_DIR }}..."
+          
+          # 檢查HTML文件
+          if [ -f "${{ env.CACHE_DIR }}/0700_HK_candlestick.html" ]; then
+            html_size=$(du -h "${{ env.CACHE_DIR }}/0700_HK_candlestick.html" | cut -f1)
+            echo "HTML file exists - Size: $html_size"
+            echo "html_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "HTML file does not exist"
+            echo "html_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # 檢查CSV文件
+          if [ -f "${{ env.CACHE_DIR }}/0700_HK.csv" ]; then
+            csv_size=$(du -h "${{ env.CACHE_DIR }}/0700_HK.csv" | cut -f1)
+            echo "CSV file exists - Size: $csv_size"
+            echo "csv_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "CSV file does not exist"
+            echo "csv_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # 列出所有文件
+          echo "All files in directory:"
+          ls -la ${{ env.CACHE_DIR }}/
+
+      # 第七步：上傳HTML圖表
+      - name: Upload HTML chart artifact
+        if: steps.verify.outputs.html_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: stock-chart-results
-          path: upload/
+          name: tencent-ohlc-chart
+          path: ${{ env.CACHE_DIR }}/0700_HK_candlestick.html
           retention-days: 7
+          compression-level: 0
 
-      - name: Final status
+      # 第八步：上傳CSV數據
+      - name: Upload CSV data artifact
+        if: steps.verify.outputs.csv_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tencent-stock-data
+          path: ${{ env.CACHE_DIR }}/0700_HK.csv
+          retention-days: 7
+          compression-level: 0
+
+      # 第九步：上傳日誌文件（如果存在）
+      - name: Upload log files
+        uses: actions/upload-artifact@v4
+        with:
+          name: generation-logs
+          path: |
+            *.log
+            ${{ env.CACHE_DIR }}/*.log
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # 第十步：上傳所有生成的文件作為備份
+      - name: Upload all generated files
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-generated-files
+          path: ${{ env.CACHE_DIR }}/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # 第十一步：發送成功通知
+      - name: Success notification
+        if: success() && steps.verify.outputs.html_exists == 'true'
         run: |
-          if [ -f "stock_data/0700_HK_candlestick.html" ]; then
-            echo "✅ SUCCESS: Chart generated successfully"
-            exit 0
+          echo "✅ Chart generation completed successfully!"
+          echo "📊 Chart and data artifacts have been uploaded"
+          echo "📈 Ticker: ${{ env.TICKER }}"
+          echo "📁 Files available in the Artifacts section"
+
+      # 第十二步：發送警告通知（部分成功）
+      - name: Partial success notification
+        if: success() && steps.verify.outputs.html_exists != 'true'
+        run: |
+          echo "⚠️ Workflow completed but no chart was generated"
+          echo "📁 Other artifacts may be available for debugging"
+
+      # 第十三步：發送失敗通知
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ Workflow failed!"
+          echo "Please check the logs for detailed error information"
+          echo "Artifacts may contain debug information"
+
+  # 可選：添加一個測試任務
+  test-generation:
+    name: Test Generation
+    runs-on: ubuntu-latest
+    needs: generate-chart
+    if: always()  # 即使主任務失敗也運行
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download artifacts for testing
+        uses: actions/download-artifact@v4
+        with:
+          name: all-generated-files
+          path: test-artifacts
+          
+      - name: Test artifact existence
+        run: |
+          echo "Testing downloaded artifacts..."
+          if [ -d "test-artifacts" ]; then
+            echo "Artifacts downloaded successfully"
+            ls -la test-artifacts/
           else
-            echo "⚠️  WARNING: Chart generation may have failed, but artifacts uploaded"
-            exit 0  # 仍然成功退出以避免工作流失败
+            echo "No artifacts found for testing"
           fi
+
+# 工作流程級別的配置
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
