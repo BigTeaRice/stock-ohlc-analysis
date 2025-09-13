@@ -27,12 +27,8 @@ RETRY_DELAY = 3  # 重試間隔(秒)
 def fetch_and_cache_data():
     """下載股票數據並緩存到本地文件"""
     try:
-        # 獲取當前日期（確保是工作日）
+        # 獲取當前日期
         end_date = datetime.now()
-        # 如果是周末，使用上一個工作日
-        if end_date.weekday() >= 5:  # 5=周六, 6=周日
-            days_to_subtract = end_date.weekday() - 4
-            end_date = end_date - timedelta(days=days_to_subtract)
         END_DATE = end_date.strftime("%Y-%m-%d")
         
         print(f"下載 {TICKER} 數據 ({START_DATE} 至 {END_DATE})...")
@@ -48,13 +44,12 @@ def fetch_and_cache_data():
                     start=START_DATE, 
                     end=END_DATE,
                     progress=True,
-                    auto_adjust=True,
-                    threads=True
+                    auto_adjust=True
                 )
                 
                 # 檢查數據是否有效
-                if df.empty or len(df) < 10:
-                    print(f"數據量不足或為空，嘗試 {attempt+1}/{MAX_RETRIES}")
+                if df.empty:
+                    print(f"數據為空，嘗試 {attempt+1}/{MAX_RETRIES}")
                     time.sleep(RETRY_DELAY)
                     continue
                 
@@ -83,8 +78,9 @@ def fetch_and_cache_data():
                     raise RuntimeError(f"達到最大重試次數: {str(e)}")
     
     except Exception as e:
-        error_msg = f"{datetime.now()}: 數據獲取失敗 - {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"數據獲取失敗: {str(e)}"
         print(error_msg)
+        
         # 嘗試加載歷史緩存數據
         if os.path.exists(CACHE_FILE):
             print("嘗試載入歷史緩存數據...")
@@ -94,6 +90,7 @@ def fetch_and_cache_data():
                 return df
             except Exception as cache_error:
                 print(f"載入緩存數據失敗: {str(cache_error)}")
+        
         raise RuntimeError("無法獲取股票數據")
 
 # ------------------------------
@@ -114,10 +111,6 @@ def preprocess_data(df):
     # 按日期排序
     df.sort_values('Date', inplace=True)
     
-    # 檢查數據有效性
-    if df['Close'].isnull().any() or df['Volume'].isnull().any():
-        print("警告：數據中仍然存在空值")
-    
     print(f"數據預處理完成，剩餘 {len(df)} 條有效記錄")
     return df
 
@@ -135,8 +128,8 @@ def plot_ohlc_chart(df):
             low=df['Low'],
             close=df['Close'],
             name=TICKER,
-            increasing_line_color='red',   # 港股上漲為紅色
-            decreasing_line_color='green', # 港股下跌為綠色
+            increasing_line_color='red',
+            decreasing_line_color='green',
         )])
         
         # 添加成交量圖
@@ -155,14 +148,11 @@ def plot_ohlc_chart(df):
         fig.update_layout(
             title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {latest_date})',
             title_x=0.5,
-            title_font=dict(size=20, color='darkblue'),
             xaxis_title='日期',
             yaxis_title='股價 (HKD)',
             template='plotly_white',
             hovermode='x unified',
             height=800,
-            showlegend=True,
-            # 添加右側y軸用於成交量
             yaxis2=dict(
                 title="成交量",
                 overlaying="y",
@@ -170,20 +160,6 @@ def plot_ohlc_chart(df):
                 showgrid=False
             ),
             xaxis_rangeslider_visible=False
-        )
-        
-        # 更新x軸設置
-        fig.update_xaxes(
-            rangeslider_visible=False,
-            rangeselector=dict(
-                buttons=list([
-                    dict(count=1, label="1月", step="month", stepmode="backward"),
-                    dict(count=6, label="6月", step="month", stepmode="backward"),
-                    dict(count=1, label="1年", step="year", stepmode="backward"),
-                    dict(count=5, label="5年", step="year", stepmode="backward"),
-                    dict(step="all", label="全部")
-                ])
-            )
         )
         
         # 保存HTML文件
@@ -195,12 +171,11 @@ def plot_ohlc_chart(df):
         )
         
         print(f"圖表已保存為: {HTML_FILE}")
-        print(f"文件大小: {os.path.getsize(HTML_FILE) / 1024 / 1024:.2f} MB")
         
         return HTML_FILE
         
     except Exception as e:
-        error_msg = f"{datetime.now()}: 繪圖失敗 - {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"繪圖失敗: {str(e)}"
         print(error_msg)
         raise
 
@@ -234,5 +209,4 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"程式執行失敗: {str(e)}")
-        print(traceback.format_exc())
         sys.exit(1)
