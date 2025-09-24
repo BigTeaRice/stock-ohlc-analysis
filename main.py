@@ -23,7 +23,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5
 
 # ------------------------------
-# 函式定義：數據獲取與緩存
+# 函式定義：數據獲取與緩存（修復列名問題）
 # ------------------------------
 def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
     try:
@@ -63,14 +63,21 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
                 )
                 if df.empty:
                     raise ValueError("Yahoo Finance 無數據")
+                
+                # 🔧 修復：將多層索引列名轉換為普通列名（關鍵！）
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)  # 去除第二層索引（股票代碼）
+                
                 # 檢查下載的列名
                 required_cols = ["Open", "High", "Low", "Close"]
                 missing_cols = [col for col in required_cols if col not in df.columns]
                 if missing_cols:
                     raise ValueError(f"下載數據缺少列：{missing_cols}")
+                
                 # 時區轉換
                 df.index = df.index.tz_localize('UTC').tz_convert(tz)
                 df = df.reset_index()
+                
                 # 保存緩存
                 df.to_csv(cache_file, index=False, encoding='utf-8')
                 print(f"💾 數據保存到緩存：{cache_file}")
@@ -84,7 +91,6 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
                     raise RuntimeError(f"下載失敗（超過 {MAX_RETRIES} 次）") from e
 
     except Exception as e:
-        # 修正：f-string 正確閉合（使用三引號或成對引號）
         error_msg = (
             f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"函式：fetch_and_cache_data\n"
@@ -96,11 +102,16 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
         raise
 
 # ------------------------------
-# 函式定義：數據預處理（修復語法錯誤）
+# 函式定義：數據預處理（修復列名問題）
 # ------------------------------
 def preprocess_data(df):
     try:
         print("🔄 開始預處理數據...")
+        
+        # 🔧 修復：再次確保列名是普通索引（避免緩存讀取時的問題）
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        
         # 1. 去除列名前後空格（解決「Open 」或「 open」等問題）
         df.columns = df.columns.str.strip()
         print(f"✅ 列名處理完成：{df.columns.tolist()}")
@@ -130,7 +141,6 @@ def preprocess_data(df):
         return df
 
     except Exception as e:
-        # 修正：f-string 正確閉合（使用括號包裹多行字符串）
         error_msg = (
             f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"函式：preprocess_data\n"
@@ -175,7 +185,6 @@ def plot_ohlc_chart(df, ticker):
         return output_path
 
     except Exception as e:
-        # 修正：f-string 正確閉合（使用括號包裹多行字符串）
         error_msg = (
             f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"函式：plot_ohlc_chart\n"
