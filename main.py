@@ -84,10 +84,13 @@ def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz
                     raise RuntimeError(f"下載失敗（超過 {MAX_RETRIES} 次）") from e
 
     except Exception as e:
-        error_msg = f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-函式：fetch_and_cache_data
-錯誤：{str(e)}
-堆疊：{traceback.format_exc()}"
+        # 修正：f-string 正確閉合（使用三引號或成對引號）
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：fetch_and_cache_data\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
         with open("error.log", "w", encoding='utf-8') as f:
             f.write(error_msg)
         raise
@@ -127,11 +130,13 @@ def preprocess_data(df):
         return df
 
     except Exception as e:
-        # 修復：f-string 正確閉合（原錯誤行）
-        error_msg = f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-函式：preprocess_data
-錯誤：{str(e)}
-堆疊：{traceback.format_exc()}"
+        # 修正：f-string 正確閉合（使用括號包裹多行字符串）
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：preprocess_data\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
         with open("error.log", "a", encoding='utf-8') as f:
             f.write(error_msg)
         raise
@@ -170,10 +175,13 @@ def plot_ohlc_chart(df, ticker):
         return output_path
 
     except Exception as e:
-        error_msg = f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-函式：plot_ohlc_chart
-錯誤：{str(e)}
-堆疊：{traceback.format_exc()}"
+        # 修正：f-string 正確閉合（使用括號包裹多行字符串）
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：plot_ohlc_chart\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
         with open("error.log", "a", encoding='utf-8') as f:
             f.write(error_msg)
         raise
