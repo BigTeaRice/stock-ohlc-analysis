@@ -1,33 +1,71 @@
-name: Run Python Script
+# ------------------------------
+# GitHub Actions 工作流程：股票数据分析
+# ------------------------------
+name: Stock Data Analysis Pipeline  # 工作流程名称（自定义）
 
+# 触发条件：推送代码到 main 分支时执行
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
+# 定义作業：在 Ubuntu 最新环境中运行
 jobs:
-  run:
-    runs-on: ubuntu-latest
+  analyze-and-upload:
+    runs-on: ubuntu-latest  # 使用 Ubuntu 系统
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      # ------------------------------
+      # 步骤1：檢出倉庫代碼（必須）
+      # ------------------------------
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4  # 最新版代码检出动作
         with:
-          python-version: '3.x'
+          fetch-depth: 0  # 检出完整历史（确保能获取所有文件）
 
-      - name: Install dependencies
-        run: |
-          pip install pandas plotly yfinance pytz
-
-      - name: Run script
-        run: |
-          python main.py
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
+      # ------------------------------
+      # 步骤2：设置 Python 环境
+      # ------------------------------
+      - name: Set Up Python Environment
+        uses: actions/setup-python@v5  # 最新版 Python 环境配置
         with:
-          name: ohlc_chart
-          path: stock_data/*_candlestick.html  # 確保這裡的路徑正確
+          python-version: "3.11"  # 与本地 Python 版本一致（可换为 3.10/3.9）
+
+      # ------------------------------
+      # 步骤3：安装项目依赖
+      # ------------------------------
+      - name: Install Dependencies
+        run: |
+          # 升级 pip 并安装 requirements.txt 中的依赖
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # 依赖文件需放在项目根目录
+
+      # ------------------------------
+      # 步骤4：运行主分析脚本
+      # ------------------------------
+      - name: Run Main Script
+        run: |
+          python main.py  # 执行你的数据分析脚本
+
+      # ------------------------------
+      # 步骤5：调试（可选，排查数据问题）
+      # ------------------------------
+      - name: Debug Data Frame Info
+        run: |
+          # 打印数据框列名（验证列名是否正确）
+          echo "📊 数据列名：$(python -c "import pandas as pd; df = pd.read_csv('data/0700-HK.csv'); print(','.join(df.columns))")"
+          # 打印前5行数据（验证数据内容）
+          echo "🔍 前5行数据："
+          python -c "import pandas as pd; df = pd.read_csv('data/0700-HK.csv'); print(df.head())"
+
+      # ------------------------------
+      # 步骤6：上传分析结果（工件）
+      # ------------------------------
+      - name: Upload Results as Artifact
+        uses: actions/upload-artifact@v4  # 最新版工件上传动作
+        with:
+          name: stock-analysis-${{ github.run_id }}  # 工件名称（含运行ID，唯一标识）
+          path: |  # 指定要上传的文件/目录
+            ohlc_chart.html  # 生成的K线图
+            data/*.csv       # 缓存的股票数据
+          retention-days: 7  # 工件保留7天（可调整1-90天）
+          if-no-files-found: error  # 无文件时抛出错误（避免静默失败）
