@@ -13,171 +13,216 @@ import time
 # ------------------------------
 # 全域參數設定
 # ------------------------------
-TICKER = "0700.HK"  # 騰訊港股代碼
-START_DATE = "2004-06-16"  # 騰訊上市日期
-END_DATE = datetime.today().strftime("%Y-%m-%d")  # 當前日期
-CACHE_DIR = "stock_data"  # 緩存目錄
-CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '_')}.csv")  # 緩存文件路徑
-HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')  # 香港時區
-MAX_RETRIES = 5  # 最大重試次數
-RETRY_DELAY = 3  # 重試間隔(秒)
+TICKER = "0700.HK"  # 港股正确代码（0700.HK）
+START_DATE = "2004-06-16"  # 腾讯上市日期
+END_DATE = datetime.today().strftime("%Y-%m-%d")
+CACHE_DIR = "data"
+CACHE_FILE = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '-')}.csv")
+HONG_KONG_TZ = pytz.timezone('Asia/Hong_Kong')
+MAX_RETRIES = 3
+RETRY_DELAY = 5
 
 # ------------------------------
-# 函式：獲取並緩存股票數據
+# 函式定義：數據獲取與緩存（修復列名問題）
 # ------------------------------
-def fetch_and_cache_data():
-    """下載股票數據並緩存到本地文件"""
+def fetch_and_cache_data(ticker, start_date, end_date, cache_dir, cache_file, tz):
     try:
-        # 創建緩存目錄
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        
-        # 嘗試讀取緩存
-        if os.path.exists(CACHE_FILE):
-            cache_date = datetime.fromtimestamp(os.path.getmtime(CACHE_FILE))
-            today = datetime.now()
-            if cache_date.date() == today.date():
-                print("使用今日最新緩存數據")
-                return pd.read_csv(CACHE_FILE, parse_dates=['Date'])
-        
-        # 從Yahoo Finance下載數據
-        print(f"下載 {TICKER} 數據 ({START_DATE} 至 {END_DATE})...")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # 讀取緩存（若存在）
+        if os.path.exists(cache_file):
+            print(f"📂 嘗試讀取緩存：{cache_file}")
+            df = pd.read_csv(cache_file, parse_dates=["Date"], encoding='utf-8')
+            if df.empty:
+                raise ValueError("緩存數據為空")
+            # 檢查緩存列名是否包含必要字段
+            required_cols = ["Open", "High", "Low", "Close"]
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"緩存缺少必要列：{missing_cols}")
+            # 驗證時間範圍
+            min_date = df["Date"].min().strftime('%Y-%m-%d')
+            max_date = df["Date"].max().strftime('%Y-%m-%d')
+            if min_date >= start_date and max_date <= end_date:
+                print(f"✅ 緩存有效（{min_date} 至 {max_date}）")
+                return df
+            else:
+                print("❌ 緩存時間範圍不匹配，重新下載")
+
+        # 下載數據（yfinance 默認返回大寫列名：Open/High/Low/Close）
         for attempt in range(MAX_RETRIES):
             try:
+                print(f"⏳ 下載數據（第 {attempt+1}/{MAX_RETRIES} 次）")
                 df = yf.download(
-                    TICKER, 
-                    start=START_DATE, 
-                    end=END_DATE,
+                    tickers=ticker,
+                    start=start_date,
+                    end=end_date,
                     progress=False,
-                    auto_adjust=True
+                    auto_adjust=True,
+                    actions=False
                 )
-                
-                # 檢查數據是否有效
                 if df.empty:
-                    raise ValueError("下載數據為空")
+                    raise ValueError("Yahoo Finance 無數據")
                 
-                # 重置索引並重命名列
+                # 🔧 修復：將多層索引列名轉換為普通列名（關鍵！）
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)  # 去除第二層索引（股票代碼）
+                
+                # 檢查下載的列名
+                required_cols = ["Open", "High", "Low", "Close"]
+                missing_cols = [col for col in required_cols if col not in df.columns]
+                if missing_cols:
+                    raise ValueError(f"下載數據缺少列：{missing_cols}")
+                
+                # 時區轉換
+                df.index = df.index.tz_localize('UTC').tz_convert(tz)
                 df = df.reset_index()
-                df.rename(columns={
-                    'Date': 'Date',
-                    'Open': 'Open',
-                    'High': 'High',
-                    'Low': 'Low',
-                    'Close': 'Close',
-                    'Volume': 'Volume'
-                }, inplace=True)
                 
-                # 保存到緩存
-                df.to_csv(CACHE_FILE, index=False)
-                print(f"數據已保存到 {CACHE_FILE}")
+                # 保存緩存
+                df.to_csv(cache_file, index=False, encoding='utf-8')
+                print(f"💾 數據保存到緩存：{cache_file}")
                 return df
-                
+
             except Exception as e:
-                print(f"下載失敗 (嘗試 {attempt+1}/{MAX_RETRIES}): {str(e)}")
+                print(f"❌ 下載失敗（第 {attempt+1} 次）：{str(e)}")
                 if attempt < MAX_RETRIES - 1:
-                    print(f"{RETRY_DELAY}秒後重試...")
                     time.sleep(RETRY_DELAY)
                 else:
-                    print("達到最大重試次數，使用備用數據源")
-                    if os.path.exists(CACHE_FILE):
-                        print("載入歷史緩存數據")
-                        return pd.read_csv(CACHE_FILE, parse_dates=['Date'])
-                    else:
-                        raise RuntimeError("無法獲取股票數據")
-    
+                    raise RuntimeError(f"下載失敗（超過 {MAX_RETRIES} 次）") from e
+
     except Exception as e:
-        error_msg = f"{datetime.now()}: 數據獲取失敗 - {str(e)}\n{traceback.format_exc()}"
-        with open("stock_error.log", "a") as f:
-            f.write(error_msg + "\n\n")
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：fetch_and_cache_data\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
+        with open("error.log", "w", encoding='utf-8') as f:
+            f.write(error_msg)
         raise
 
 # ------------------------------
-# 函式：數據預處理
+# 函式定義：數據預處理（修復列名問題）
 # ------------------------------
 def preprocess_data(df):
-    """清洗和準備數據用於繪圖"""
-    # 確保日期格式正確
-    if not pd.api.types.is_datetime64_any_dtype(df['Date']):
-        df['Date'] = pd.to_datetime(df['Date'])
-    
-    # 轉換為香港時區
-    df['Date'] = df['Date'].dt.tz_localize('UTC').dt.tz_convert(HONG_KONG_TZ)
-    
-    # 處理缺失值
-    df.dropna(subset=['Open', 'High', 'Low', 'Close'], inplace=True)
-    
-    # 按日期排序
-    df.sort_values('Date', inplace=True)
-    
-    return df
-
-# ------------------------------
-# 函式：繪製K線圖
-# ------------------------------
-def plot_ohlc_chart(df):
-    """使用Plotly繪製互動式K線圖"""
     try:
-        # 創建K線圖
-        fig = go.Figure(data=[go.Candlestick(
-            x=df['Date'],
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            name=TICKER,
-            increasing_line_color='red',   # 港股上漲為紅色
-            decreasing_line_color='green', # 港股下跌為綠色
-        )])
+        print("🔄 開始預處理數據...")
         
-        # 設置圖表佈局
-        fig.update_layout(
-            title=f'{TICKER} 歷史K線圖 ({START_DATE} 至 {END_DATE})',
-            title_x=0.5,
-            title_font=dict(size=24, color='darkblue'),
-            xaxis_title='日期',
-            yaxis_title='股價 (HKD)',
-            template='plotly_white',
-            hovermode='x unified',
-            height=800,
-        )
+        # 🔧 修復：再次確保列名是普通索引（避免緩存讀取時的問題）
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
         
-        # 保存並顯示圖表
-        html_file = os.path.join(CACHE_DIR, f"{TICKER.replace('.', '_')}_candlestick.html")
-        fig.write_html(html_file, auto_open=True)
-        print(f"圖表已保存為: {html_file}")
-        
-        return html_file
-        
+        # 1. 去除列名前後空格（解決「Open 」或「 open」等問題）
+        df.columns = df.columns.str.strip()
+        print(f"✅ 列名處理完成：{df.columns.tolist()}")
+
+        # 2. 檢查必要列是否存在（Open/High/Low/Close）
+        required_cols = ["Open", "High", "Low", "Close"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"數據缺少必要列：{missing_cols}！實際列名：{df.columns.tolist()}")
+
+        # 3. 轉換日期欄位並排序
+        df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_convert(HONG_KONG_TZ)
+        df = df.sort_values(by="Date").reset_index(drop=True)
+
+        # 4. 處理缺失值
+        initial_count = len(df)
+        df = df.dropna(subset=required_cols)
+        deleted_rows = initial_count - len(df)
+        if deleted_rows > 0:
+            print(f"⚠️ 刪除 {deleted_rows} 行缺失值數據")
+
+        # 5. 驗證數據量
+        if len(df) < 2:
+            raise ValueError("預處理後數據不足（少於 2 行）")
+
+        print("✅ 預處理完成！")
+        return df
+
     except Exception as e:
-        error_msg = f"{datetime.now()}: 繪圖失敗 - {str(e)}\n{traceback.format_exc()}"
-        with open("plot_error.log", "a") as f:
-            f.write(error_msg + "\n\n")
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：preprocess_data\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
+        with open("error.log", "a", encoding='utf-8') as f:
+            f.write(error_msg)
         raise
 
 # ------------------------------
-# 主程序
+# 函式定義：繪製圖表
+# ------------------------------
+def plot_ohlc_chart(df, ticker):
+    try:
+        print("📈 開始繪製圖表...")
+        df["Date_Str"] = df["Date"].dt.strftime("%Y-%m-%d")
+
+        fig = go.Figure(data=[go.Ohlc(
+            x=df["Date_Str"],
+            open=df["Open"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
+            name=ticker,
+            increasing_line_color='#ff0000',
+            decreasing_line_color='#00ff00'
+        )])
+
+        fig.update_layout(
+            title={"text": f"{ticker} 歷史K線圖", "x": 0.5},
+            xaxis_title="日期",
+            yaxis_title="價格 (HKD)",
+            xaxis_rangeslider_visible=False,
+            template="plotly_white"
+        )
+
+        output_path = "./ohlc_chart.html"
+        fig.write_html(output_path, include_plotlyjs="cdn", auto_open=True)
+        print(f"✅ 圖表生成：{output_path}")
+
+        return output_path
+
+    except Exception as e:
+        error_msg = (
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"函式：plot_ohlc_chart\n"
+            f"錯誤：{str(e)}\n"
+            f"堆疊：{traceback.format_exc()}"
+        )
+        with open("error.log", "a", encoding='utf-8') as f:
+            f.write(error_msg)
+        raise
+
+# ------------------------------
+# 主程式入口
 # ------------------------------
 if __name__ == "__main__":
-    print("=" * 50)
-    print(f"騰訊控股(0700.HK)歷史K線圖生成器")
-    print(f"日期範圍: {START_DATE} 至 {END_DATE}")
-    print("=" * 50)
-    
     try:
-        # 獲取數據
-        df = fetch_and_cache_data()
-        
-        # 預處理數據
-        df = preprocess_data(df)
-        print(f"數據預處理完成，共 {len(df)} 條記錄")
-        
-        # 繪製圖表
-        print("生成互動式K線圖...")
-        chart_file = plot_ohlc_chart(df)
-        
-        print("=" * 50)
-        print("程式執行成功！")
-        print(f"圖表已保存為: {os.path.abspath(chart_file)}")
-        
+        print("🚀 開始運行程式...")
+        # 1. 獲取/緩存數據
+        df = fetch_and_cache_data(
+            ticker=TICKER,
+            start_date=START_DATE,
+            end_date=END_DATE,
+            cache_dir=CACHE_DIR,
+            cache_file=CACHE_FILE,
+            tz=HONG_KONG_TZ
+        )
+        # 打印下載數據的列名（調試用）
+        print(f"📊 下載數據的列名：{df.columns.tolist()}")
+
+        # 2. 預處理數據
+        processed_df = preprocess_data(df)
+        # 打印預處理後的列名（調試用）
+        print(f"🔍 預處理後的列名：{processed_df.columns.tolist()}")
+
+        # 3. 繪製圖表
+        plot_ohlc_chart(processed_df, TICKER)
+
+        print("🎉 程式執行成功！")
+
     except Exception as e:
-        print(f"程式執行失敗: {str(e)}")
-        print("請查看錯誤日誌獲取詳細信息")
+        print(f"❌ 程式執行失敗：{str(e)}")
+        exit(1)
