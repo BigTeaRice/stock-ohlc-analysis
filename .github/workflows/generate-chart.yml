@@ -45,7 +45,7 @@ jobs:
         with:
           fetch-depth: 0  # 拉取所有历史（方便调试）
 
-      # 2. 设置Python环境（引用全局环境变量）
+      # 2. 设置Python环境（最新版 setup-python）
       - name: Set Up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
@@ -59,13 +59,13 @@ jobs:
           pip install pandas plotly yfinance pytz
           echo "[INFO] 依赖安装完成"
 
-      # 4. 创建缓存目录（引用全局环境变量）
+      # 4. 创建缓存目录
       - name: Create Cache Directory
         run: |
           mkdir -p ${{ env.CACHE_DIR }}
           echo "[INFO] 缓存目录：${{ env.CACHE_DIR }}"
 
-      # 5. 运行图表生成脚本（传递debug参数）
+      # 5. 运行图表生成脚本
       - name: Run Chart Generation Script
         id: generate
         run: |
@@ -82,7 +82,7 @@ jobs:
           fi
         continue-on-error: true  # 即使失败也继续后续步骤
 
-      # 6. 验证输出文件（引用全局环境变量）
+      # 6. 验证输出文件
       - name: Verify Generated Files
         id: verify
         run: |
@@ -114,29 +114,29 @@ jobs:
             ls -la ${{ env.CACHE_DIR }}
           fi
 
-      # 7. 上传HTML图表（仅成功时，引用全局环境变量）
+      # 7. 上传HTML图表（仅成功时，用v4）
       - name: Upload HTML Artifact
         if: steps.verify.outputs.html_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 正确版本
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-chart
           path: ${{ env.HTML_OUTPUT }}
           retention-days: 7
           compression-level: 0
 
-      # 8. 上传CSV数据（仅成功时，引用全局环境变量）
+      # 8. 上传CSV数据（仅成功时，用v4）
       - name: Upload CSV Artifact
         if: steps.verify.outputs.csv_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 正确版本
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-data
           path: ${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}
           retention-days: 7
           compression-level: 0
 
-      # 9. 上传日志文件（引用全局环境变量）
+      # 9. 上传日志文件（用v4）
       - name: Upload Log Files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 正确版本
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs
           path: |
@@ -145,7 +145,7 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
 
-      # 10. 发送最终通知（引用GitHub上下文）
+      # 10. 发送最终通知
       - name: Success Notification
         if: success() && steps.verify.outputs.html_exists == 'true'
         run: |
@@ -177,7 +177,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4  # 最新版下载动作
         with:
           path: test-results
 
