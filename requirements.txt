@@ -1,5 +1,6 @@
-pandas==2.1.4
-plotly==5.18.0
+pandas==2.2.3
+plotly==5.23.0
 yfinance==0.2.31
-pytz==2023.3.post1
+pytz==2024.1
+
 
