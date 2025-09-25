@@ -93,6 +93,100 @@ jobs:
 
       # 5. 缓存股票数据（避免重复下载）
       - name: Cache Stock Data
+        uses: actions/name: Generate Stock OHLC Charts
+
+on:
+  # 1. 手动触发（支持调试+指定股票）
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: "启用调试模式（输出详细日志）"
+        required: false
+        default: false
+        type: boolean
+      tickers:
+        description: "指定股票代码（逗号分隔，如0700.HK,0005.HK）"
+        required: false
+        default: ""
+        type: string
+  
+  # 2. 定时任务：香港时间每晚10点（UTC14:00，周一至周五）
+  schedule:
+    - cron: "0 14 * * 1-5"
+  
+  # 3. 代码变更触发（main分支/PR）
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# ------------------------------
+# 全局配置（动态生成+矩阵支持）
+# ------------------------------
+env:
+  PYTHON_VERSION: "3.10"
+  BASE_CACHE_DIR: "stock_data"
+  WORKFLOW_PREFIX: "tencent-stock-${{ github.run_id }}"
+  REQUIREMENTS_FILE: "requirements.txt"
+  LOG_RETENTION: 3  # 日志保留天数
+
+# ------------------------------
+# 依赖文件（固定版本，避免环境波动）
+# ------------------------------
+# 需在仓库根目录创建 requirements.txt，内容：
+# pandas==2.1.3
+# plotly==5.23.0
+# yfinance==0.2.31
+# pytz==2024.1
+# pydantic==2.5.1
+
+
+jobs:
+  # ------------------------------
+  # 核心任务：生成图表
+  # ------------------------------
+  generate-charts:
+    name: Generate Charts for ${{ matrix.ticker }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        # 支持手动指定股票或默认配置
+        ticker: ${{ fromJson(needs.setup-config.outputs.tickers) }}
+    outputs:
+      status: ${{ steps.generate.outputs.status }}
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉取所有历史（方便调试）
+
+      # 2. 设置Python环境+缓存依赖
+      - name: Set Up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"  # 缓存pip依赖
+
+      # 3. 缓存pip依赖（基于代码哈希）
+      - name: Cache Pip Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE) }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      # 4. 安装依赖
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ${{ env.REQUIREMENTS_FILE }}
+          echo "[INFO] 依赖安装完成"
+
+      # 5. 缓存股票数据（避免重复下载）
+      - name: Cache Stock Data
         uses: actions/cache@v4
         with:
           path: ${{ env.BASE_CACHE_DIR }}
@@ -172,34 +266,38 @@ jobs:
             echo "csv_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      # 9. 上传工件（仅成功时）
-      - name: Upload Chart Artifact
+      # 9. 上传HTML图表（仅成功时，v4版本）
+      - name: Upload HTML Artifact
         if: steps.verify.outputs.html_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 升级到v4
         with:
           name: ${{ env.WORKFLOW_PREFIX }}-chart-${{ matrix.ticker }}
-          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
+          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}  # 工件分组
           path: ${{ env.BASE_CACHE_DIR }}/${{ env.HTML_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
-          retention-days: 7
+          retention-days: 7  # 保留7天
+          compression-level: 0  # 不压缩（保留文本可读性）
 
-      - name: Upload Data Artifact
+      # 10. 上传CSV数据（仅成功时，v4版本）
+      - name: Upload CSV Artifact
         if: steps.verify.outputs.csv_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 升级到v4
         with:
           name: ${{ env.WORKFLOW_PREFIX }}-data-${{ matrix.ticker }}
           group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
           path: ${{ env.BASE_CACHE_DIR }}/${{ env.CSV_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
           retention-days: 7
+          compression-level: 0
 
-      # 10. 上传日志
-      - name: Upload Logs
-        uses: actions/upload-artifact@v4
+      # 11. 上传日志文件（始终上传，v4版本）
+      - name: Upload Log Files
+        uses: actions/upload-artifact@v4  # ✅ 升级到v4
         with:
           name: ${{ env.WORKFLOW_PREFIX }}-logs
           group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
           path: |
             stock_chart.log
           retention-days: ${{ env.LOG_RETENTION }}
+          if-no-files-found: ignore  # 无日志时不报错
 
 
   # ------------------------------
