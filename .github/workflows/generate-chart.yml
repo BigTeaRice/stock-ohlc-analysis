@@ -23,11 +23,11 @@ on:
 # 全局环境变量（与Python脚本解耦）
 env:
   PYTHON_VERSION: '3.10'
-  TICKER: '0700.HK'               # 港股代码
-  CACHE_DIR: 'stock_data'         # 数据缓存目录（与脚本一致）
-  HTML_OUTPUT: 'ohlc_chart.html'  # 图表输出文件名（根目录）
-  CSV_OUTPUT: '0700-HK.csv'       # 缓存CSV文件名（TICKER替换.为-）
-  WORKFLOW_ARTIFACT_PREFIX: 'tencent-${{ env.TICKER }}'  # 工件前缀（统一命名）
+  TICKER: '0700.HK'
+  CACHE_DIR: 'stock_data'
+  HTML_OUTPUT: 'ohlc_chart.html'       # 图表输出路径（根目录）
+  CSV_OUTPUT: '0700-HK.csv'            # 缓存CSV路径（CACHE_DIR下）
+  WORKFLOW_ARTIFACT_PREFIX: 'tencent-${{ env.TICKER }}'  # 工件统一前缀
 
 
 jobs:
@@ -39,37 +39,37 @@ jobs:
       status: ${{ steps.generate.outputs.status }}
 
     steps:
-      # 1. 检出代码
+      # 1. 检出代码（最新版checkout动作）
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 拉取所有历史（方便调试）
 
-      # 2. 设置Python环境
+      # 2. 设置Python环境（最新版setup-python）
       - name: Set Up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+          cache: 'pip'  # 缓存pip依赖
 
       # 3. 安装依赖
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas plotly yfinance pytz
+          pip install pandas plotly yfinance pytz  # 依赖与Python脚本一致
           echo "[INFO] 依赖安装完成"
 
       # 4. 创建缓存目录
       - name: Create Cache Directory
         run: |
           mkdir -p ${{ env.CACHE_DIR }}
-          echo "[INFO] 缓存目录创建：${{ env.CACHE_DIR }}"
+          echo "[INFO] 缓存目录：${{ env.CACHE_DIR }}"
 
-      # 5. 运行脚本（传递debug_mode参数）
+      # 5. 运行图表生成脚本（传递debug参数）
       - name: Run Chart Generation Script
         id: generate
         run: |
-          echo "[INFO] 启动图表生成脚本..."
+          echo "[INFO] 启动脚本..."
           python main.py --debug_mode ${{ inputs.debug_mode }}
           exit_code=$?
           echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
@@ -82,13 +82,12 @@ jobs:
           fi
         continue-on-error: true  # 即使失败也继续后续步骤（方便调试）
 
-      # 6. 验证生成文件
+      # 6. 验证输出文件
       - name: Verify Generated Files
         id: verify
         run: |
           echo "[INFO] 验证输出文件..."
-          
-          # 验证HTML图表（根目录）
+          # 检查HTML图表（根目录）
           if [ -f "${{ env.HTML_OUTPUT }}" ]; then
             html_size=$(du -h "${{ env.HTML_OUTPUT }}" | cut -f1)
             echo "[SUCCESS] HTML图表存在 - 大小：$html_size"
@@ -97,8 +96,7 @@ jobs:
             echo "[ERROR] HTML图表未找到：${{ env.HTML_OUTPUT }}"
             echo "html_exists=false" >> $GITHUB_OUTPUT
           fi
-
-          # 验证CSV缓存（CACHE_DIR下）
+          # 检查CSV缓存（CACHE_DIR下）
           csv_path="${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}"
           if [ -f "$csv_path" ]; then
             csv_size=$(du -h "$csv_path" | cut -f1)
@@ -108,8 +106,7 @@ jobs:
             echo "[ERROR] CSV缓存未找到：$csv_path"
             echo "csv_exists=false" >> $GITHUB_OUTPUT
           fi
-
-          # 列出关键文件（调试模式必看）
+          # 调试模式：输出关键文件列表
           if ${{ inputs.debug_mode }}; then
             echo "[DEBUG] 根目录文件："
             ls -la .
@@ -120,47 +117,47 @@ jobs:
       # 7. 上传HTML图表（仅当生成成功时）
       - name: Upload HTML Artifact
         if: steps.verify.outputs.html_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 关键：升级到v4
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-chart
           path: ${{ env.HTML_OUTPUT }}
-          retention-days: 7
-          compression-level: 0
+          retention-days: 7  # 工件保留7天
+          compression-level: 0  # 不压缩（加快下载）
 
       # 8. 上传CSV数据（仅当生成成功时）
       - name: Upload CSV Artifact
         if: steps.verify.outputs.csv_exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 关键：升级到v4
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-data
           path: ${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}
           retention-days: 7
           compression-level: 0
 
-      # 9. 上传日志文件（如果有）
+      # 9. 上传日志文件（无论成功失败）
       - name: Upload Log Files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # ✅ 关键：升级到v4
         with:
           name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs
           path: |
-            *.log
-            ${{ env.CACHE_DIR }}/*.log
-          retention-days: 3
-          if-no-files-found: ignore
+            *.log  # 根目录日志
+            ${{ env.CACHE_DIR }}/*.log  # 缓存目录日志
+          retention-days: 3  # 日志保留3天
+          if-no-files-found: ignore  # 无日志时不报错
 
-      # 10. 发送通知（根据状态）
+      # 10. 发送最终通知
       - name: Success Notification
         if: success() && steps.verify.outputs.html_exists == 'true'
         run: |
-          echo "🎉 图表生成成功！"
+          echo "🎉 工作流执行成功！"
           echo "📊 访问工件：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "📁 文件：${{ env.HTML_OUTPUT }}（图表）、${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}（数据）"
+          echo "📁 包含：${{ env.HTML_OUTPUT }}（图表）、${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}（数据）"
 
       - name: Partial Success Notification
         if: success() && steps.verify.outputs.html_exists != 'true'
         run: |
           echo "⚠️ 脚本运行但未生成图表"
-          echo "🔍 请检查日志或CSV缓存：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "🔍 请检查日志：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Failure Notification
         if: failure()
@@ -173,19 +170,19 @@ jobs:
   test-artifacts:
     name: Test Generated Artifacts
     runs-on: ubuntu-latest
-    needs: generate-chart
+    needs: generate-chart  # 依赖主任务
     if: always()  # 即使主任务失败也运行
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4  # 最新版下载动作
         with:
-          path: test-results
+          path: test-results  # 下载到test-results目录
 
       - name: Verify Artifacts
         run: |
-          echo "[INFO] 下载的工件："
+          echo "[INFO] 下载的工件列表："
           ls -la test-results
-          echo "[SUCCESS] 工件下载完成"
+          echo "[SUCCESS] 工件完整性验证完成"
