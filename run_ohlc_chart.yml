@@ -34,38 +34,191 @@ jobs:
       # 步骤3：安装项目依赖
       # ------------------------------
       - name: Install Dependencies
-        run: |
-          # 升级 pip 并安装 requirements.txt 中的依赖
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt  # 依赖文件需放在项目根目录
+        run: |name: Generate Tencent Stock Chart
 
-      # ------------------------------
-      # 步骤4：运行主分析脚本
-      # ------------------------------
-      - name: Run Main Script
-        run: |
-          python main.py  # 执行你的数据分析脚本
+on:
+  # 1. 手动触发（支持调试模式）
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: '启用调试模式（输出详细日志）'
+        required: false
+        default: false
+        type: boolean
+  
+  # 2. 自动调度：香港时间每晚10点（UTC 14:00）
+  schedule:
+    - cron: '0 14 * * 1-5'  # 周一至周五晚10点（香港时间）
+  
+  # 3. 代码推送/PR触发
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
-      # ------------------------------
-      # 步骤5：调试（可选，排查数据问题）
-      # ------------------------------
-      - name: Debug Data Frame Info
-        run: |
-          # 打印数据框列名（验证列名是否正确）
-          echo "📊 数据列名：$(python -c "import pandas as pd; df = pd.read_csv('data/0700-HK.csv'); print(','.join(df.columns))")"
-          # 打印前5行数据（验证数据内容）
-          echo "🔍 前5行数据："
-          python -c "import pandas as pd; df = pd.read_csv('data/0700-HK.csv'); print(df.head())"
+# 全局环境变量
+env:
+  PYTHON_VERSION: '3.10'
+  TICKER: '0700.HK'
+  CACHE_DIR: 'stock_data'
+  HTML_OUTPUT: 'ohlc_chart.html'
+  CSV_OUTPUT: '0700-HK.csv'
+  WORKFLOW_ARTIFACT_PREFIX: 'tencent-${{ env.TICKER }}'
 
-      # ------------------------------
-      # 步骤6：上传分析结果（工件）
-      # ------------------------------
-      - name: Upload Results as Artifact
-        uses: actions/upload-artifact@v4  # 最新版工件上传动作
+
+jobs:
+  generate-chart:
+    name: Generate OHLC Chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      status: ${{ steps.generate.outputs.status }}
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout Repository
+        uses: actions/checkout@v4  # 最新版本
         with:
-          name: stock-analysis-${{ github.run_id }}  # 工件名称（含运行ID，唯一标识）
-          path: |  # 指定要上传的文件/目录
-            ohlc_chart.html  # 生成的K线图
-            data/*.csv       # 缓存的股票数据
-          retention-days: 7  # 工件保留7天（可调整1-90天）
-          if-no-files-found: error  # 无文件时抛出错误（避免静默失败）
+          fetch-depth: 0
+
+      # 2. 设置Python环境
+      - name: Set Up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5  # 最新版本
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      # 3. 安装依赖
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas plotly yfinance pytz
+          echo "[INFO] 依赖安装完成"
+
+      # 4. 创建缓存目录
+      - name: Create Cache Directory
+        run: |
+          mkdir -p ${{ env.CACHE_DIR }}
+          echo "[INFO] 缓存目录：${{ env.CACHE_DIR }}"
+
+      # 5. 运行脚本（传递debug参数）
+      - name: Run Chart Generation Script
+        id: generate
+        run: |
+          echo "[INFO] 启动脚本..."
+          python main.py --debug_mode ${{ inputs.debug_mode }}
+          exit_code=$?
+          echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
+          if [ $exit_code -eq 0 ]; then
+            echo "[SUCCESS] 脚本成功"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "[ERROR] 脚本失败（码：$exit_code）"
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      # 6. 验证文件
+      - name: Verify Generated Files
+        id: verify
+        run: |
+          echo "[INFO] 验证输出..."
+          # 检查HTML
+          if [ -f "${{ env.HTML_OUTPUT }}" ]; then
+            html_size=$(du -h "${{ env.HTML_OUTPUT }}" | cut -f1)
+            echo "[SUCCESS] HTML存在 - 大小：$html_size"
+            echo "html_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "[ERROR] HTML未找到：${{ env.HTML_OUTPUT }}"
+            echo "html_exists=false" >> $GITHUB_OUTPUT
+          fi
+          # 检查CSV
+          csv_path="${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}"
+          if [ -f "$csv_path" ]; then
+            csv_size=$(du -h "$csv_path" | cut -f1)
+            echo "[SUCCESS] CSV存在 - 大小：$csv_size"
+            echo "csv_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "[ERROR] CSV未找到：$csv_path"
+            echo "csv_exists=false" >> $GITHUB_OUTPUT
+          fi
+          # 调试模式输出文件列表
+          if ${{ inputs.debug_mode }}; then
+            echo "[DEBUG] 根目录文件："
+            ls -la .
+            echo "[DEBUG] 缓存目录文件："
+            ls -la ${{ env.CACHE_DIR }}
+          fi
+
+      # 7. 上传HTML图表（仅成功时）
+      - name: Upload HTML Artifact
+        if: steps.verify.outputs.html_exists == 'true'
+        uses: actions/upload-artifact@v4  # 关键修正：升级到v4
+        with:
+          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-chart
+          path: ${{ env.HTML_OUTPUT }}
+          retention-days: 7
+          compression-level: 0
+
+      # 8. 上传CSV数据（仅成功时）
+      - name: Upload CSV Artifact
+        if: steps.verify.outputs.csv_exists == 'true'
+        uses: actions/upload-artifact@v4  # 关键修正：升级到v4
+        with:
+          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-data
+          path: ${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}
+          retention-days: 7
+          compression-level: 0
+
+      # 9. 上传日志
+      - name: Upload Log Files
+        uses: actions/upload-artifact@v4  # 关键修正：升级到v4
+        with:
+          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs
+          path: |
+            *.log
+            ${{ env.CACHE_DIR }}/*.log
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # 10. 发送通知
+      - name: Success Notification
+        if: success() && steps.verify.outputs.html_exists == 'true'
+        run: |
+          echo "🎉 成功！"
+          echo "📊 访问工件：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "📁 文件：${{ env.HTML_OUTPUT }}、${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}"
+
+      - name: Partial Success Notification
+        if: success() && steps.verify.outputs.html_exists != 'true'
+        run: |
+          echo "⚠️ 脚本运行但未生成图表"
+          echo "🔍 检查日志：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Failure Notification
+        if: failure()
+        run: |
+          echo "❌ 失败！"
+          echo "📝 查看日志：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs"
+
+
+  # 测试任务（验证工件）
+  test-artifacts:
+    name: Test Generated Artifacts
+    runs-on: ubuntu-latest
+    needs: generate-chart
+    if: always()
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4  # 最新版本
+        with:
+          path: test-results
+
+      - name: Verify Artifacts
+        run: |
+          echo "[INFO] 下载的工件："
+          ls -la test-results
+          echo "[SUCCESS] 工件验证完成"
