@@ -1,188 +1,234 @@
-name: Generate Tencent Stock Chart
+name: Generate Stock OHLC Charts
 
 on:
-  # 1. 手动触发（支持调试模式）
+  # 1. 手动触发（支持调试+指定股票）
   workflow_dispatch:
     inputs:
       debug_mode:
-        description: '启用调试模式（输出详细日志）'
+        description: "启用调试模式（输出详细日志）"
         required: false
         default: false
         type: boolean
+      tickers:
+        description: "指定股票代码（逗号分隔，如0700.HK,0005.HK）"
+        required: false
+        default: ""
+        type: string
   
-  # 2. 自动调度：香港时间每晚10点（UTC 14:00）
+  # 2. 定时任务：香港时间每晚10点（UTC14:00，周一至周五）
   schedule:
-    - cron: '0 14 * * 1-5'  # 周一至周五晚10点（香港时间）
+    - cron: "0 14 * * 1-5"
   
-  # 3. 代码推送/PR触发
+  # 3. 代码变更触发（main分支/PR）
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
-# 全局环境变量（必须用 ${{ env.VAR }} 引用）
+# ------------------------------
+# 全局配置（动态生成+矩阵支持）
+# ------------------------------
 env:
-  PYTHON_VERSION: '3.10'
-  TICKER: '0700.HK'
-  CACHE_DIR: 'stock_data'
-  HTML_OUTPUT: 'ohlc_chart.html'       # 图表输出路径（根目录）
-  CSV_OUTPUT: '0700-HK.csv'            # 缓存CSV路径（CACHE_DIR下）
-  WORKFLOW_ARTIFACT_PREFIX: 'tencent-${{ env.TICKER }}'  # 工件前缀（动态生成）
+  PYTHON_VERSION: "3.10"
+  BASE_CACHE_DIR: "stock_data"
+  WORKFLOW_PREFIX: "tencent-stock-${{ github.run_id }}"
+  REQUIREMENTS_FILE: "requirements.txt"
+  LOG_RETENTION: 3  # 日志保留天数
+
+# ------------------------------
+# 依赖文件（固定版本，避免环境波动）
+# ------------------------------
+# 创建 requirements.txt（需与脚本依赖一致）
+# 内容：
+# pandas==2.1.3
+# plotly==5.23.0
+# yfinance==0.2.31
+# pytz==2024.1
+# pydantic==2.5.1
 
 
 jobs:
-  generate-chart:
-    name: Generate OHLC Chart
+  # ------------------------------
+  # 核心任务：生成图表
+  # ------------------------------
+  generate-charts:
+    name: Generate Charts for ${{ matrix.ticker }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        # 支持手动指定股票或默认配置
+        ticker: ${{ fromJson(needs.setup-config.outputs.tickers) }}
     outputs:
       status: ${{ steps.generate.outputs.status }}
 
     steps:
-      # 1. 检出代码（最新版 checkout）
+      # 1. 检出代码
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 拉取所有历史（方便调试）
 
-      # 2. 设置Python环境（最新版 setup-python）
+      # 2. 设置Python环境+缓存依赖
       - name: Set Up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'  # 缓存pip依赖
+          cache: "pip"  # 缓存pip依赖
 
-      # 3. 安装依赖
+      # 3. 缓存pip依赖（基于代码哈希）
+      - name: Cache Pip Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE) }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      # 4. 安装依赖
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas plotly yfinance pytz
+          pip install -r ${{ env.REQUIREMENTS_FILE }}
           echo "[INFO] 依赖安装完成"
 
-      # 4. 创建缓存目录
-      - name: Create Cache Directory
-        run: |
-          mkdir -p ${{ env.CACHE_DIR }}
-          echo "[INFO] 缓存目录：${{ env.CACHE_DIR }}"
+      # 5. 缓存股票数据（避免重复下载）
+      - name: Cache Stock Data
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BASE_CACHE_DIR }}
+          key: ${{ runner.os }}-stock-data-${{ hashFiles(env.REQUIREMENTS_FILE) }}-${{ matrix.ticker }}-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-stock-data-${{ hashFiles(env.REQUIREMENTS_FILE) }}-${{ matrix.ticker }}-
 
-      # 5. 运行图表生成脚本
-      - name: Run Chart Generation Script
-        id: generate
+      # 6. 配置矩阵股票（手动输入优先）
+      - name: Setup Matrix Tickers
+        id: setup-config
         run: |
-          echo "[INFO] 启动脚本..."
-          python main.py --debug_mode ${{ inputs.debug_mode }}
+          # 手动指定的股票优先于环境变量
+          if [[ -n "${{ github.event.inputs.tickers }}" ]]; then
+            tickers=($(echo "${{ github.event.inputs.tickers }}" | tr "," "
+"))
+          else
+            # 从配置类中读取默认股票（需通过环境变量传递）
+            tickers=($(echo "${{ env.TICKER }}" | tr "," "
+"))
+          fi
+          echo "tickers=$(echo "${{ tickers[@] }}" | jq -R . | jq -s .)" >> $GITHUB_OUTPUT
+
+      # 7. 运行生成脚本
+      - name: Run Generation Script
+        id: generate
+        shell: bash -el {0}
+        env:
+          DEBUG_MODE: ${{ github.event.inputs.debug_mode }}
+          TICKER: ${{ matrix.ticker }}
+        run: |
+          echo "[INFO] 启动脚本（股票：${{ matrix.ticker }}，调试：${{ env.DEBUG_MODE }}）"
+          python main.py
           exit_code=$?
           echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
-          if [ $exit_code -eq 0 ]; then
-            echo "[SUCCESS] 脚本执行成功"
+          if [[ $exit_code -eq 0 ]]; then
+            echo "[SUCCESS] 股票${{ matrix.ticker }}处理成功"
             echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "[ERROR] 脚本执行失败（退出码：$exit_code）"
+            echo "[ERROR] 股票${{ matrix.ticker }}处理失败"
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
-        continue-on-error: true  # 即使失败也继续后续步骤
+        continue-on-error: true
 
-      # 6. 验证输出文件
-      - name: Verify Generated Files
+      # 8. 验证输出文件
+      - name: Verify Outputs
         id: verify
+        shell: bash -el {0}
+        env:
+          TICKER: ${{ matrix.ticker }}
         run: |
-          echo "[INFO] 验证输出文件..."
-          # 检查HTML图表（根目录）
-          if [ -f "${{ env.HTML_OUTPUT }}" ]; then
-            html_size=$(du -h "${{ env.HTML_OUTPUT }}" | cut -f1)
-            echo "[SUCCESS] HTML图表存在 - 大小：$html_size"
+          html_path="${{ env.BASE_CACHE_DIR }}/${{ env.HTML_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}"
+          csv_path="${{ env.BASE_CACHE_DIR }}/${{ env.CSV_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}"
+          
+          # 验证HTML
+          if [[ -f "$html_path" ]]; then
+            html_size=$(ls -lh "$html_path" | awk '{print $5}')
+            echo "[✅] HTML图表：$html_path（大小：$html_size）"
             echo "html_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "[ERROR] HTML图表未找到：${{ env.HTML_OUTPUT }}"
+            echo "[❌] HTML图表未找到：$html_path"
             echo "html_exists=false" >> $GITHUB_OUTPUT
           fi
-          # 检查CSV缓存（CACHE_DIR下）
-          csv_path="${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}"
-          if [ -f "$csv_path" ]; then
-            csv_size=$(du -h "$csv_path" | cut -f1)
-            echo "[SUCCESS] CSV缓存存在 - 大小：$csv_size"
-            echo "csv_exists=true" >> $GITHUB_OUTPUT
+          
+          # 验证CSV
+          if [[ -f "$csv_path" ]]; then
+            required_cols=("Date" "Open" "High" "Low" "Close")
+            cols=$(head -n 1 "$csv_path" | tr "," "
+" | grep -E "^Date$|^Open$|^High$|^Low$|^Close$")
+            if [[ -n "$cols" ]]; then
+              echo "[✅] CSV缓存：$csv_path（列正确）"
+              echo "csv_exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "[❌] CSV缓存列缺失：$csv_path"
+              echo "csv_exists=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "[ERROR] CSV缓存未找到：$csv_path"
+            echo "[❌] CSV缓存未找到：$csv_path"
             echo "csv_exists=false" >> $GITHUB_OUTPUT
           fi
-          # 调试模式：输出关键文件列表
-          if ${{ inputs.debug_mode }}; then
-            echo "[DEBUG] 根目录文件："
-            ls -la .
-            echo "[DEBUG] 缓存目录文件："
-            ls -la ${{ env.CACHE_DIR }}
-          fi
 
-      # 7. 上传HTML图表（仅成功时，用v4）
-      - name: Upload HTML Artifact
+      # 9. 上传工件（仅成功时）
+      - name: Upload Chart Artifact
         if: steps.verify.outputs.html_exists == 'true'
-        uses: actions/upload-artifact@v4  # ✅ 正确版本
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-chart
-          path: ${{ env.HTML_OUTPUT }}
+          name: ${{ env.WORKFLOW_PREFIX }}-chart-${{ matrix.ticker }}
+          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
+          path: ${{ env.BASE_CACHE_DIR }}/${{ env.HTML_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
           retention-days: 7
-          compression-level: 0
 
-      # 8. 上传CSV数据（仅成功时，用v4）
-      - name: Upload CSV Artifact
+      - name: Upload Data Artifact
         if: steps.verify.outputs.csv_exists == 'true'
-        uses: actions/upload-artifact@v4  # ✅ 正确版本
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-data
-          path: ${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}
+          name: ${{ env.WORKFLOW_PREFIX }}-data-${{ matrix.ticker }}
+          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
+          path: ${{ env.BASE_CACHE_DIR }}/${{ env.CSV_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
           retention-days: 7
-          compression-level: 0
 
-      # 9. 上传日志文件（用v4）
-      - name: Upload Log Files
-        uses: actions/upload-artifact@v4  # ✅ 正确版本
+      # 10. 上传日志
+      - name: Upload Logs
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs
+          name: ${{ env.WORKFLOW_PREFIX }}-logs
+          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
           path: |
-            *.log
-            ${{ env.CACHE_DIR }}/*.log
-          retention-days: 3
-          if-no-files-found: ignore
-
-      # 10. 发送最终通知
-      - name: Success Notification
-        if: success() && steps.verify.outputs.html_exists == 'true'
-        run: |
-          echo "🎉 工作流执行成功！"
-          echo "📊 访问工件：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "📁 包含：${{ env.HTML_OUTPUT }}（图表）、${{ env.CACHE_DIR }}/${{ env.CSV_OUTPUT }}（数据）"
-
-      - name: Partial Success Notification
-        if: success() && steps.verify.outputs.html_exists != 'true'
-        run: |
-          echo "⚠️ 脚本运行但未生成图表"
-          echo "🔍 请检查日志：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-      - name: Failure Notification
-        if: failure()
-        run: |
-          echo "❌ 工作流失败！"
-          echo "📝 查看错误日志：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ env.WORKFLOW_ARTIFACT_PREFIX }}-logs"
+            stock_chart.log
+          retention-days: ${{ env.LOG_RETENTION }}
 
 
-  # 可选：测试任务（验证工件完整性）
-  test-artifacts:
-    name: Test Generated Artifacts
+  # ------------------------------
+  # 可选任务：发送Slack通知
+  # ------------------------------
+  notify-slack:
+    name: Send Slack Notification
     runs-on: ubuntu-latest
-    needs: generate-chart
-    if: always()
+    needs: generate-charts
+    if: always()  # 无论成功失败都通知
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4  # 最新版下载动作
+      - name: Send Notification
+        uses: slackapi/slack-github-action@v1
         with:
-          path: test-results
-
-      - name: Verify Artifacts
-        run: |
-          echo "[INFO] 下载的工件列表："
-          ls -la test-results
-          echo "[SUCCESS] 工件完整性验证完成"
+          slack-message: |
+            {
+              "text": "${{ job.status }}: ${{ github.workflow }} - ${{ matrix.ticker }}",
+              "attachments": [
+                {
+                  "title": "详情",
+                  "fields": [
+                    {"title": "Run ID", "value": "${{ github.run_id }}", "short": true},
+                    {"title": "Job URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/${{ github.run_number }}", "short": true},
+                    {"title": "Artifacts", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}", "short": true}
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}  # 需存储在GitHub Secrets
+          JOB_STATUS: ${{ needs.generate-charts.result }}
+          MATRIX_TICKER: ${{ matrix.ticker }}
