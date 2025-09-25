@@ -117,7 +117,7 @@ def preprocess_data(df):
         print(f"✅ 列名處理完成：{df.columns.tolist()}")
 
         # 2. 檢查必要列是否存在（Open/High/Low/Close）
-        required_cols = ["Open", "High", "Low", "Close"]
+        required_cols = ["Open", "High", "Low", "Close", "Date"]
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             raise ValueError(f"數據缺少必要列：{missing_cols}！實際列名：{df.columns.tolist()}")
@@ -128,7 +128,7 @@ def preprocess_data(df):
 
         # 4. 處理缺失值
         initial_count = len(df)
-        df = df.dropna(subset=required_cols)
+        df = df.dropna(subset=required_cols[:-1])  # 排除Date列
         deleted_rows = initial_count - len(df)
         if deleted_rows > 0:
             print(f"⚠️ 刪除 {deleted_rows} 行缺失值數據")
@@ -186,7 +186,7 @@ def plot_ohlc_chart(df, ticker):
 
     except Exception as e:
         error_msg = (
-            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%s')}\n"
             f"函式：plot_ohlc_chart\n"
             f"錯誤：{str(e)}\n"
             f"堆疊：{traceback.format_exc()}"
