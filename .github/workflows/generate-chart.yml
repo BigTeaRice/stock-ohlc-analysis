@@ -12,7 +12,7 @@ on:
       tickers:
         description: "指定股票代码（逗号分隔，如0700.HK,0005.HK）"
         required: false
-        default: ""
+        default: "0700.HK"
         type: string
   
   # 2. 定时任务：香港时间每晚10点（UTC14:00，周一至周五）
@@ -26,307 +26,245 @@ on:
     branches: [main]
 
 # ------------------------------
-# 全局配置（动态生成+矩阵支持）
+# 全局配置
 # ------------------------------
 env:
   PYTHON_VERSION: "3.10"
   BASE_CACHE_DIR: "stock_data"
-  WORKFLOW_PREFIX: "tencent-stock-${{ github.run_id }}"
+  WORKFLOW_PREFIX: "stock-charts-${{ github.run_id }}"
   REQUIREMENTS_FILE: "requirements.txt"
-  LOG_RETENTION: 3  # 日志保留天数
-
-# ------------------------------
-# 依赖文件（固定版本，避免环境波动）
-# ------------------------------
-# 创建 requirements.txt（需与脚本依赖一致）
-# 内容：
-# pandas==2.1.3
-# plotly==5.23.0
-# yfinance==0.2.31
-# pytz==2024.1
-# pydantic==2.5.1
-
+  LOG_RETENTION: 3
 
 jobs:
   # ------------------------------
-  # 核心任务：生成图表
+  # 配置准备任务
   # ------------------------------
-  generate-charts:
-    name: Generate Charts for ${{ matrix.ticker }}
+  setup-config:
+    name: Setup Configuration
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      matrix:
-        # 支持手动指定股票或默认配置
-        ticker: ${{ fromJson(needs.setup-config.outputs.tickers) }}
     outputs:
-      status: ${{ steps.generate.outputs.status }}
-
+      tickers: ${{ steps.setup.outputs.tickers }}
+      debug_mode: ${{ steps.setup.outputs.debug_mode }}
     steps:
-      # 1. 检出代码
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 拉取所有历史（方便调试）
-
-      # 2. 设置Python环境+缓存依赖
-      - name: Set Up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"  # 缓存pip依赖
-
-      # 3. 缓存pip依赖（基于代码哈希）
-      - name: Cache Pip Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE) }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      # 4. 安装依赖
-      - name: Install Dependencies
+      - name: Setup Tickers and Debug Mode
+        id: setup
         run: |
-          python -m pip install --upgrade pip
-          pip install -r ${{ env.REQUIREMENTS_FILE }}
-          echo "[INFO] 依赖安装完成"
-
-      # 5. 缓存股票数据（避免重复下载）
-      - name: Cache Stock Data
-        uses: actions/name: Generate Stock OHLC Charts
-
-on:
-  # 1. 手动触发（支持调试+指定股票）
-  workflow_dispatch:
-    inputs:
-      debug_mode:
-        description: "启用调试模式（输出详细日志）"
-        required: false
-        default: false
-        type: boolean
-      tickers:
-        description: "指定股票代码（逗号分隔，如0700.HK,0005.HK）"
-        required: false
-        default: ""
-        type: string
-  
-  # 2. 定时任务：香港时间每晚10点（UTC14:00，周一至周五）
-  schedule:
-    - cron: "0 14 * * 1-5"
-  
-  # 3. 代码变更触发（main分支/PR）
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-# ------------------------------
-# 全局配置（动态生成+矩阵支持）
-# ------------------------------
-env:
-  PYTHON_VERSION: "3.10"
-  BASE_CACHE_DIR: "stock_data"
-  WORKFLOW_PREFIX: "tencent-stock-${{ github.run_id }}"
-  REQUIREMENTS_FILE: "requirements.txt"
-  LOG_RETENTION: 3  # 日志保留天数
-
-# ------------------------------
-# 依赖文件（固定版本，避免环境波动）
-# ------------------------------
-# 需在仓库根目录创建 requirements.txt，内容：
-# pandas==2.1.3
-# plotly==5.23.0
-# yfinance==0.2.31
-# pytz==2024.1
-# pydantic==2.5.1
-
-
-jobs:
-  # ------------------------------
-  # 核心任务：生成图表
-  # ------------------------------
-  generate-charts:
-    name: Generate Charts for ${{ matrix.ticker }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      matrix:
-        # 支持手动指定股票或默认配置
-        ticker: ${{ fromJson(needs.setup-config.outputs.tickers) }}
-    outputs:
-      status: ${{ steps.generate.outputs.status }}
-
-    steps:
-      # 1. 检出代码
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 拉取所有历史（方便调试）
-
-      # 2. 设置Python环境+缓存依赖
-      - name: Set Up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"  # 缓存pip依赖
-
-      # 3. 缓存pip依赖（基于代码哈希）
-      - name: Cache Pip Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles(env.REQUIREMENTS_FILE) }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      # 4. 安装依赖
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r ${{ env.REQUIREMENTS_FILE }}
-          echo "[INFO] 依赖安装完成"
-
-      # 5. 缓存股票数据（避免重复下载）
-      - name: Cache Stock Data
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.BASE_CACHE_DIR }}
-          key: ${{ runner.os }}-stock-data-${{ hashFiles(env.REQUIREMENTS_FILE) }}-${{ matrix.ticker }}-${{ github.run_id }}
-          restore-keys: ${{ runner.os }}-stock-data-${{ hashFiles(env.REQUIREMENTS_FILE) }}-${{ matrix.ticker }}-
-
-      # 6. 配置矩阵股票（手动输入优先）
-      - name: Setup Matrix Tickers
-        id: setup-config
-        run: |
-          # 手动指定的股票优先于环境变量
+          # 处理股票代码
           if [[ -n "${{ github.event.inputs.tickers }}" ]]; then
-            tickers=($(echo "${{ github.event.inputs.tickers }}" | tr "," "
-"))
+            TICKERS="${{ github.event.inputs.tickers }}"
           else
-            # 从配置类中读取默认股票（需通过环境变量传递）
-            tickers=($(echo "${{ env.TICKER }}" | tr "," "
-"))
+            TICKERS="0700.HK"
           fi
-          echo "tickers=$(echo "${{ tickers[@] }}" | jq -R . | jq -s .)" >> $GITHUB_OUTPUT
+          
+          # 转换为JSON数组格式
+          TICKER_JSON=$(echo "$TICKERS" | jq -R -s -c 'split(",")')
+          echo "tickers=$TICKER_JSON" >> $GITHUB_OUTPUT
+          
+          # 调试模式
+          DEBUG_MODE="${{ github.event.inputs.debug_mode || 'false' }}"
+          echo "debug_mode=$DEBUG_MODE" >> $GITHUB_OUTPUT
+          
+          echo "配置完成:"
+          echo "股票代码: $TICKERS"
+          echo "调试模式: $DEBUG_MODE"
 
-      # 7. 运行生成脚本
+  # ------------------------------
+  # 核心任务：生成图表
+  # ------------------------------
+  generate-charts:
+    name: Generate Charts for ${{ matrix.ticker }}
+    runs-on: ubuntu-latest
+    needs: setup-config
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        ticker: ${{ fromJson(needs.setup-config.outputs.tickers) }}
+    outputs:
+      status: ${{ steps.generate.outputs.status }}
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. 设置Python环境
+      - name: Set Up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # 3. 安装依赖
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "${{ env.REQUIREMENTS_FILE }}" ]; then
+            pip install -r ${{ env.REQUIREMENTS_FILE }}
+          else
+            pip install pandas plotly yfinance pytz pydantic
+          fi
+          echo "[INFO] 依赖安装完成"
+
+      # 4. 创建数据目录
+      - name: Create Data Directory
+        run: |
+          mkdir -p ${{ env.BASE_CACHE_DIR }}
+          echo "[INFO] 数据目录创建完成"
+
+      # 5. 运行生成脚本
       - name: Run Generation Script
         id: generate
-        shell: bash -el {0}
         env:
-          DEBUG_MODE: ${{ github.event.inputs.debug_mode }}
+          DEBUG_MODE: ${{ needs.setup-config.outputs.debug_mode }}
           TICKER: ${{ matrix.ticker }}
         run: |
-          echo "[INFO] 启动脚本（股票：${{ matrix.ticker }}，调试：${{ env.DEBUG_MODE }}）"
+          echo "[INFO] 启动脚本 - 股票: ${{ matrix.ticker }}, 调试: $DEBUG_MODE"
+          
+          # 设置环境变量供Python脚本使用
+          export TICKER="${{ matrix.ticker }}"
+          export DEBUG_MODE="$DEBUG_MODE"
+          export CACHE_DIR="${{ env.BASE_CACHE_DIR }}"
+          
           python main.py
           exit_code=$?
+          
           echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
-          if [[ $exit_code -eq 0 ]]; then
-            echo "[SUCCESS] 股票${{ matrix.ticker }}处理成功"
+          if [ $exit_code -eq 0 ]; then
+            echo "[SUCCESS] 股票 ${{ matrix.ticker }} 处理成功"
             echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "[ERROR] 股票${{ matrix.ticker }}处理失败"
+            echo "[ERROR] 股票 ${{ matrix.ticker }} 处理失败"
             echo "status=failure" >> $GITHUB_OUTPUT
           fi
-        continue-on-error: true
 
-      # 8. 验证输出文件
+      # 6. 验证输出文件
       - name: Verify Outputs
         id: verify
-        shell: bash -el {0}
-        env:
-          TICKER: ${{ matrix.ticker }}
         run: |
-          html_path="${{ env.BASE_CACHE_DIR }}/${{ env.HTML_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}"
-          csv_path="${{ env.BASE_CACHE_DIR }}/${{ env.CSV_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}"
+          echo "[INFO] 验证输出文件..."
           
-          # 验证HTML
-          if [[ -f "$html_path" ]]; then
-            html_size=$(ls -lh "$html_path" | awk '{print $5}')
-            echo "[✅] HTML图表：$html_path（大小：$html_size）"
+          # 清理股票代码中的特殊字符用于文件名
+          CLEAN_TICKER=$(echo "${{ matrix.ticker }}" | sed 's/[^a-zA-Z0-9]/_/g')
+          
+          HTML_FILE="${{ env.BASE_CACHE_DIR }}/ohlc_chart_${{ matrix.ticker }}.html"
+          CSV_FILE="${{ env.BASE_CACHE_DIR }}/${{ matrix.ticker }}.csv"
+          
+          echo "检查HTML文件: $HTML_FILE"
+          echo "检查CSV文件: $CSV_FILE"
+          
+          # 验证HTML文件
+          if [ -f "$HTML_FILE" ]; then
+            HTML_SIZE=$(ls -lh "$HTML_FILE" | awk '{print $5}')
+            echo "✅ HTML文件存在: $HTML_FILE (大小: $HTML_SIZE)"
             echo "html_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "[❌] HTML图表未找到：$html_path"
+            echo "❌ HTML文件不存在: $HTML_FILE"
             echo "html_exists=false" >> $GITHUB_OUTPUT
           fi
           
-          # 验证CSV
-          if [[ -f "$csv_path" ]]; then
-            required_cols=("Date" "Open" "High" "Low" "Close")
-            cols=$(head -n 1 "$csv_path" | tr "," "
-" | grep -E "^Date$|^Open$|^High$|^Low$|^Close$")
-            if [[ -n "$cols" ]]; then
-              echo "[✅] CSV缓存：$csv_path（列正确）"
+          # 验证CSV文件
+          if [ -f "$CSV_FILE" ]; then
+            CSV_LINES=$(wc -l < "$CSV_FILE" 2>/dev/null || echo "0")
+            if [ "$CSV_LINES" -gt 1 ]; then
+              echo "✅ CSV文件存在: $CSV_FILE (行数: $CSV_LINES)"
               echo "csv_exists=true" >> $GITHUB_OUTPUT
             else
-              echo "[❌] CSV缓存列缺失：$csv_path"
+              echo "❌ CSV文件无效: $CSV_FILE"
               echo "csv_exists=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "[❌] CSV缓存未找到：$csv_path"
+            echo "❌ CSV文件不存在: $CSV_FILE"
             echo "csv_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      # 9. 上传HTML图表（仅成功时，v4版本）
+      # 7. 上传HTML图表
       - name: Upload HTML Artifact
         if: steps.verify.outputs.html_exists == 'true'
-        uses: actions/upload-artifact@v4  # ✅ 升级到v4
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.WORKFLOW_PREFIX }}-chart-${{ matrix.ticker }}
-          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}  # 工件分组
-          path: ${{ env.BASE_CACHE_DIR }}/${{ env.HTML_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
-          retention-days: 7  # 保留7天
-          compression-level: 0  # 不压缩（保留文本可读性）
-
-      # 10. 上传CSV数据（仅成功时，v4版本）
-      - name: Upload CSV Artifact
-        if: steps.verify.outputs.csv_exists == 'true'
-        uses: actions/upload-artifact@v4  # ✅ 升级到v4
-        with:
-          name: ${{ env.WORKFLOW_PREFIX }}-data-${{ matrix.ticker }}
-          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
-          path: ${{ env.BASE_CACHE_DIR }}/${{ env.CSV_OUTPUT_TEMPLATE.format(ticker=matrix.ticker) }}
+          path: ${{ env.BASE_CACHE_DIR }}/ohlc_chart_${{ matrix.ticker }}.html
           retention-days: 7
           compression-level: 0
 
-      # 11. 上传日志文件（始终上传，v4版本）
-      - name: Upload Log Files
-        uses: actions/upload-artifact@v4  # ✅ 升级到v4
+      # 8. 上传CSV数据
+      - name: Upload CSV Artifact
+        if: steps.verify.outputs.csv_exists == 'true'
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.WORKFLOW_PREFIX }}-logs
-          group: ${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}
+          name: ${{ env.WORKFLOW_PREFIX }}-data-${{ matrix.ticker }}
+          path: ${{ env.BASE_CACHE_DIR }}/${{ matrix.ticker }}.csv
+          retention-days: 7
+          compression-level: 0
+
+      # 9. 上传日志文件
+      - name: Upload Log Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.WORKFLOW_PREFIX }}-logs-${{ matrix.ticker }}
           path: |
             stock_chart.log
+            *.log
           retention-days: ${{ env.LOG_RETENTION }}
-          if-no-files-found: ignore  # 无日志时不报错
+          if-no-files-found: ignore
 
-
-  # ------------------------------
-  # 可选任务：发送Slack通知
-  # ------------------------------
-  notify-slack:
-    name: Send Slack Notification
-    runs-on: ubuntu-latest
-    needs: generate-charts
-    if: always()  # 无论成功失败都通知
-    steps:
-      - name: Send Notification
-        uses: slackapi/slack-github-action@v1
+      # 10. 上传所有文件作为备份
+      - name: Upload All Files Backup
+        uses: actions/upload-artifact@v4
         with:
-          slack-message: |
-            {
-              "text": "${{ job.status }}: ${{ github.workflow }} - ${{ matrix.ticker }}",
-              "attachments": [
-                {
-                  "title": "详情",
-                  "fields": [
-                    {"title": "Run ID", "value": "${{ github.run_id }}", "short": true},
-                    {"title": "Job URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/${{ github.run_number }}", "short": true},
-                    {"title": "Artifacts", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ env.WORKFLOW_PREFIX }}-${{ matrix.ticker }}", "short": true}
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}  # 需存储在GitHub Secrets
-          JOB_STATUS: ${{ needs.generate-charts.result }}
-          MATRIX_TICKER: ${{ matrix.ticker }}
+          name: ${{ env.WORKFLOW_PREFIX }}-backup-${{ matrix.ticker }}
+          path: ${{ env.BASE_CACHE_DIR }}/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # 11. 清理临时文件（可选）
+      - name: Cleanup Temporary Files
+        if: always()
+        run: |
+          echo "[INFO] 清理临时文件..."
+          # 保留缓存文件，只清理临时文件
+          find . -name "*.tmp" -delete 2>/dev/null || true
+          find . -name "*.temp" -delete 2>/dev/null || true
+
+  # ------------------------------
+  # 汇总报告任务
+  # ------------------------------
+  generate-report:
+    name: Generate Summary Report
+    runs-on: ubuntu-latest
+    needs: 
+      - setup-config
+      - generate-charts
+    if: always()
+    
+    steps:
+      - name: Generate Workflow Report
+        run: |
+          echo "📊 股票图表生成工作流报告"
+          echo "================================"
+          echo "工作流: ${{ github.workflow }}"
+          echo "运行ID: ${{ github.run_id }}"
+          echo "触发方式: ${{ github.event_name }}"
+          echo "触发时间: ${{ github.event.schedule || '手动触发' }}"
+          echo "股票代码: ${{ needs.setup-config.outputs.tickers }}"
+          echo "调试模式: ${{ needs.setup-config.outputs.debug_mode }}"
+          echo "================================"
+          
+          # 检查每个股票的处理状态
+          echo "处理状态:"
+          # 这里可以添加更详细的状态检查逻辑
+          
+          echo "================================"
+          echo "📁 生成的Artifacts:"
+          echo "- HTML图表文件"
+          echo "- CSV数据文件" 
+          echo "- 运行日志"
+          echo "- 完整备份"
+          echo "================================"
+
+# ------------------------------
+# 工作流级别配置
+# ------------------------------
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
